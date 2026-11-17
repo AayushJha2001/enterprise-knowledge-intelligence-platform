@@ -15,14 +15,18 @@ FROM base AS dev
 COPY requirements-dev.txt .
 RUN pip install -r requirements-dev.txt
 COPY . .
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ---- prod: minimal image, non-root user ----
 FROM base AS prod
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
-RUN useradd --create-home --uid 10001 appuser
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /data/uploads /data/models \
+    && chown -R appuser:appuser /data
+ENV UPLOAD_DIR=/data/uploads \
+    MODEL_CACHE_DIR=/data/models
 USER appuser
 EXPOSE 8000
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]

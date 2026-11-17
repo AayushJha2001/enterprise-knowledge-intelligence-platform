@@ -13,6 +13,10 @@ _EXTRA_FIELDS = (
     "status_code",
     "duration_ms",
     "client_ip",
+    "document_id",
+    "document_status",
+    "chunk_count",
+    "attempt",
 )
 
 
@@ -44,3 +48,6 @@ def configure_logging(level: str = "INFO") -> None:
     # Uvicorn's own access log duplicates our request log; keep its error log.
     logging.getLogger("uvicorn.access").handlers = []
     logging.getLogger("uvicorn.access").propagate = False
+    # Model downloads log every HTTP request at INFO.
+    for noisy in ("httpx", "huggingface_hub", "fastembed"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

@@ -1,4 +1,15 @@
+from pathlib import Path
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
+
+
+def _head_revision() -> str:
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "migrations"))
+    return ScriptDirectory.from_config(config).get_current_head()
 
 
 def test_live_returns_ok(client: TestClient) -> None:
@@ -13,7 +24,7 @@ def test_ready_reports_all_dependencies_ok(client: TestClient) -> None:
     assert response.status_code == 200, body
     assert body["status"] == "ok"
     assert body["checks"] == {"postgres": "ok", "redis": "ok"}
-    assert body["schema_version"] == "0001"
+    assert body["schema_version"] == _head_revision()
 
 
 def test_ready_returns_503_when_redis_is_down(client: TestClient) -> None:

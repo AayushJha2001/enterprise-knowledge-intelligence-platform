@@ -96,17 +96,26 @@ class Document(Base):
             "status IN (" + ", ".join(f"'{s}'" for s in DOCUMENT_STATUSES) + ")",
             name="ck_documents_status",
         ),
+        # The ingestion worker claims the oldest pending document.
+        Index("ix_documents_status_created_at", "status", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source_uri: Mapped[str | None] = mapped_column(Text)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(127), nullable=False)
     # SHA-256 of the file bytes: re-uploading the same file is detected, not re-indexed.
     checksum_sha256: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="pending", nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    chunk_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    embedding_model: Mapped[str | None] = mapped_column(String(200))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

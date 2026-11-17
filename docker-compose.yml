@@ -1,5 +1,24 @@
 name: ekip
 
+x-app: &app
+  image: ekip-app:dev # built once, shared by migrate, api and worker
+  build:
+    context: .
+    target: dev
+  environment: &app-env
+    DATABASE_URL: postgresql+asyncpg://ekip:ekip@postgres:5432/ekip
+    REDIS_URL: redis://redis:6379/0
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    UPLOAD_DIR: /data/uploads
+    MODEL_CACHE_DIR: /data/models
+    EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fastembed}
+  volumes:
+    - ./app:/code/app
+    - ./migrations:/code/migrations
+    - ./tests:/code/tests
+    - uploads:/data/uploads
+    - models:/data/models
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -27,26 +46,36 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
-    build:
-      context: .
-      target: dev
-    environment:
-      DATABASE_URL: postgresql+asyncpg://ekip:ekip@postgres:5432/ekip
-      REDIS_URL: redis://redis:6379/0
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      WATCHFILES_FORCE_POLLING: "true" # file-change events don't cross Windows bind mounts
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./app:/code/app
-      - ./migrations:/code/migrations
-      - ./tests:/code/tests
+  # One-shot job: apply migrations, then exit. API and worker wait for it.
+  migrate:
+    <<: *app
+    command: alembic upgrade head
     depends_on:
       postgres:
         condition: service_healthy
+
+  api:
+    <<: *app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      <<: *app-env
+      WATCHFILES_FORCE_POLLING: "true" # file-change events don't cross Windows bind mounts
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
+  worker:
+    <<: *app
+    command: python -m app.worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
+  uploads:
+  models:

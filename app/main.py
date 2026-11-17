@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from app.api import health
+from app.api import documents, health
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import add_request_context
 from app.db.session import build_engine, build_session_factory
+from app.ingestion.storage import LocalFileStorage
 
 
 @asynccontextmanager
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_engine = build_engine(settings)
     app.state.session_factory = build_session_factory(app.state.db_engine)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.storage = LocalFileStorage(settings.upload_dir)
     try:
         yield
     finally:
@@ -37,6 +39,7 @@ def create_app() -> FastAPI:
     )
     add_request_context(app)
     app.include_router(health.router)
+    app.include_router(documents.router)
     return app
 
 
