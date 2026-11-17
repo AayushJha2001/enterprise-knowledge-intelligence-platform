@@ -1,0 +1,43 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from redis.asyncio import Redis
+
+from app.api import health
+from app.core.config import get_settings
+from app.core.logging import configure_logging
+from app.core.middleware import add_request_context
+from app.db.session import build_engine, build_session_factory
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+
+    # Connection pools are created once per process and shared by all requests.
+    app.state.db_engine = build_engine(settings)
+    app.state.session_factory = build_session_factory(app.state.db_engine)
+    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        yield
+    finally:
+        await app.state.redis.aclose()
+        await app.state.db_engine.dispose()
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    app = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        description="RAG over enterprise documents with access control, citations and evaluation.",
+        lifespan=lifespan,
+    )
+    add_request_context(app)
+    app.include_router(health.router)
+    return app
+
+
+app = create_app()

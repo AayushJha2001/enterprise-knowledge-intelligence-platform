@@ -1,0 +1,52 @@
+name: ekip
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ekip
+      POSTGRES_PASSWORD: ekip
+      POSTGRES_DB: ekip
+    ports:
+      - "5433:5432" # 5433 on the host so it doesn't clash with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ekip -d ekip"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: dev
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ekip:ekip@postgres:5432/ekip
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WATCHFILES_FORCE_POLLING: "true" # file-change events don't cross Windows bind mounts
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/code/app
+      - ./migrations:/code/migrations
+      - ./tests:/code/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

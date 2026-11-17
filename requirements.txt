@@ -1,0 +1,10 @@
+# Pinned for reproducible builds. Bump deliberately and let CI verify.
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+pydantic-settings==2.16.3
+sqlalchemy[asyncio]==2.1.9
+asyncpg==0.32.0
+alembic==1.20.1
+pgvector==0.5.1
+redis==6.4.0
