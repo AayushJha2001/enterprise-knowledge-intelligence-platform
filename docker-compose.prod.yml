@@ -1,0 +1,83 @@
+# Production-style stack on a single host: prod image, no source mounts, no database or
+# Redis ports exposed, secrets required from the environment, restart on failure.
+#
+#   export POSTGRES_PASSWORD=... JWT_SECRET=...      # (PowerShell: $env:JWT_SECRET = "...")
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml exec api python -m app.cli create-admin --email you@example.com --name You
+#
+# For a managed cloud deployment, see docs/deploy-azure.md.
+name: ekip-prod
+
+x-app: &app
+  image: ekip-app:prod
+  build:
+    context: .
+    target: prod
+  restart: unless-stopped
+  environment:
+    DATABASE_URL: postgresql+asyncpg://ekip:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/ekip
+    REDIS_URL: redis://redis:6379/0
+    JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to 32+ random characters}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-[]}
+    LOG_LEVEL: INFO
+  volumes:
+    - uploads:/data/uploads
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ekip
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ekip
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ekip -d ekip"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: python -m app.worker
+    healthcheck:
+      disable: true  # no HTTP server in the worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Knowledge Assistant</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <!-- Sign-in -->
+  <main id="login-view" class="login" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <h1>Knowledge Assistant</h1>
+      <p class="muted">Answers from your company's documents, with sources.</p>
+      <label>Email
+        <input id="login-email" name="username" type="email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="error" role="alert" hidden></p>
+      <button type="submit" class="primary">Sign in</button>
+    </form>
+  </main>
+
+  <!-- App -->
+  <div id="app-view" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">Knowledge Assistant</div>
+      <div class="who">
+        <span id="me-name"></span>
+        <span id="me-groups" class="muted"></span>
+        <button id="logout" class="ghost" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <aside class="sidebar" aria-label="Documents">
+      <div class="sidebar-head">
+        <h2>Your documents</h2>
+        <label id="upload-label" class="ghost small" hidden>
+          Upload
+          <input id="upload-input" type="file" accept=".pdf,.docx,.md,.markdown,.html,.htm,.txt" hidden>
+        </label>
+      </div>
+      <p id="upload-status" class="muted small" hidden></p>
+      <ul id="doc-list" class="doc-list"></ul>
+    </aside>
+
+    <main class="chat">
+      <section id="thread" class="thread" aria-live="polite">
+        <div id="empty" class="empty">
+          <h2>Ask about your documents</h2>
+          <p class="muted">Answers only use documents you have access to, and every claim links to its source.</p>
+          <div id="suggestions" class="suggestions"></div>
+        </div>
+      </section>
+      <form id="ask-form" class="composer">
+        <textarea id="question" rows="1" maxlength="2000" placeholder="Ask a question…" aria-label="Question" required></textarea>
+        <button id="ask-button" type="submit" class="primary">Ask</button>
+      </form>
+    </main>
+  </div>
+
+  <!-- One question/answer exchange; cloned per question. -->
+  <template id="exchange-template">
+    <article class="exchange">
+      <p class="question"></p>
+      <div class="answer">
+        <div class="answer-text"><span class="typing">Searching…</span></div>
+        <p class="meta muted small"></p>
+        <details class="sources" hidden>
+          <summary></summary>
+          <ol class="source-list"></ol>
+        </details>
+      </div>
+    </article>
+  </template>
+</body>
+</html>

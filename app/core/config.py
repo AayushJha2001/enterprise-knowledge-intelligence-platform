@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     reranker_provider: Literal["fastembed", "none"] = "fastembed"
     reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
 
+    # --- Web ---
+    # Origins allowed to call the API from a browser on another domain (JSON list, e.g.
+    # '["https://kb.example.com"]'). Empty: same-origin only (the built-in UI needs none).
+    cors_allow_origins: list[str] = []
+
     # --- Authentication ---
     # HS256 signing key for access tokens. The default is only for local development;
     # the app refuses to start with it when ENVIRONMENT=production.

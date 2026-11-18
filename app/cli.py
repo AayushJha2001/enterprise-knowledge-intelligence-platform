@@ -14,6 +14,7 @@ import getpass
 import json
 import sys
 from pathlib import Path
+from typing import BinaryIO
 
 from redis.asyncio import Redis
 from sqlalchemy import func, select
@@ -100,21 +101,39 @@ async def seed_demo() -> None:
     await redis.aclose()
 
 
+def password_from_stream(stream: BinaryIO) -> str:
+    """First line of a byte stream, without the line ending or a UTF-8 byte-order mark.
+
+    Windows PowerShell prefixes piped text with a BOM (EF BB BF); kept, it would silently
+    become the first character of the password and no login would ever match.
+    """
+    line = stream.readline().decode("utf-8-sig")
+    return line.rstrip("\r\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
     admin = commands.add_parser("create-admin", help="create an admin account")
     admin.add_argument("--email", required=True)
     admin.add_argument("--name", required=True)
+    admin.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="read the password from standard input (for scripts; never put it in arguments)",
+    )
     commands.add_parser("seed-demo", help="create demo groups/users and share sample docs")
     args = parser.parse_args()
 
     if args.command == "create-admin":
-        password = getpass.getpass("Password: ")
+        if args.password_stdin:
+            password = password_from_stream(sys.stdin.buffer)
+        else:
+            password = getpass.getpass("Password: ")
+            if getpass.getpass("Repeat password: ") != password:
+                sys.exit("Passwords don't match")
         if len(password) < MIN_PASSWORD_LENGTH:
             sys.exit(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-        if getpass.getpass("Repeat password: ") != password:
-            sys.exit("Passwords don't match")
         asyncio.run(create_admin(args.email, args.name, password))
     elif args.command == "seed-demo":
         asyncio.run(seed_demo())

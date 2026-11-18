@@ -32,7 +32,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 - [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; Claude or free offline generator
 - [x] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
 - [x] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
-- [ ] **Phase 7 – UI & deploy:** chat UI with citations, Azure Container Apps
+- [x] **Phase 7 – UI & deploy:** chat UI with citations, production image and compose, Azure guide
 
 ## Quick start
 
@@ -42,6 +42,7 @@ Requires Docker Desktop.
 docker compose up -d --build
 ```
 
+- Chat UI: http://localhost:8000 (sign in with a demo user, see [Users and access](#users-and-access))
 - API docs: http://localhost:8000/docs
 - Liveness: http://localhost:8000/health/live
 - Readiness (Postgres, Redis, schema): http://localhost:8000/health/ready
@@ -231,6 +232,42 @@ Model settings: `claude-opus-5-5`, effort `low` (configurable via `ANSWER_EFFORT
 server-side fallback enabled so a request declined by a safety classifier is retried on
 another model. Refusals and truncated answers are reported in `status`.
 
+## Web UI
+
+`http://localhost:8000` serves a chat UI (`app/web/`: plain HTML, CSS and JavaScript, no
+build step): sign in, see the documents you can read, ask questions, and watch the answer
+stream in. Each citation marker opens the exact passage it came from; the footer shows
+latency, generator, cost and whether the answer came from the cache. Admins get an upload
+button. It adapts to phone widths and to light/dark mode.
+
+Security: the UI is served with a strict Content-Security-Policy (only its own scripts and
+styles, no inline code, no framing), every API response carries `nosniff`,
+`X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`, and all server-provided text is
+inserted with `textContent`, so document content can't inject script (a test enforces the
+absence of HTML sinks). The token lives in `sessionStorage` (per tab, gone when it closes).
+CORS is off unless `CORS_ALLOW_ORIGINS` lists a separate frontend domain.
+
+## Production
+
+```bash
+export POSTGRES_PASSWORD=... JWT_SECRET=...        # 32+ random characters each
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec api python -m app.cli create-admin --email you@example.com --name You
+```
+
+The production image (`Dockerfile`, target `prod`) runs as a non-root user, has the
+embedding and reranker models **baked in** (no download at start-up, works offline), a
+container health check, and trusts forwarded headers from the load balancer so login
+lockout sees real client IPs. Migrations run as a one-off `migrate` service, not on every
+start, so several API replicas never race. The compose file publishes only the API port,
+requires the secrets from the environment, and refuses demo seeding.
+`create-admin --password-stdin` creates the first admin from scripts.
+
+Cloud: [docs/deploy-azure.md](docs/deploy-azure.md) walks through Azure Container Apps
+(API, worker and migration job from one image), PostgreSQL Flexible Server with pgvector,
+Azure Cache for Redis and an Azure Files share for uploads. It has not been run against a
+live subscription.
+
 ## Observability
 
 Every search, answer and extraction writes one row to `request_traces`: user, question
@@ -328,12 +365,15 @@ app/
   db/                SQLAlchemy models, async session
   api/               routers (health, auth, admin, documents, search, ask)
   ingestion/         parsers, chunking, embeddings, storage, pipeline (the job)
+  web/               chat UI (HTML/CSS/JS, served at /)
   retrieval/         hybrid search, RRF fusion, cross-encoder reranking
   generation/        Claude gateway, offline extractive gateway, prompts, cited answers,
                      structured extraction, pricing
 scripts/ask.py       command-line client for /ask
 samples/corpus/      fictional company documents for demos and evals
 evals/               labelled dataset, metrics, harness, CI thresholds
+docs/deploy-azure.md Azure Container Apps deployment guide
+docker-compose.prod.yml  production-style single-host stack
 migrations/          Alembic migrations
 tests/               integration tests
 .github/workflows/   CI: lint, migrate, test, downgrade check, prod image build
