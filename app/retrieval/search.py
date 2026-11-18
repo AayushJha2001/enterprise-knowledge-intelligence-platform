@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,9 @@ from app.core.security import Principal
 from app.ingestion.embeddings import Embedder
 from app.retrieval.fusion import reciprocal_rank_fusion
 from app.retrieval.rerank import Reranker
+
+if TYPE_CHECKING:
+    from app.core.cache import Cache
 
 SearchMode = Literal["hybrid", "dense", "keyword"]
 
@@ -122,10 +125,30 @@ class _Timer:
 
 
 class Retriever:
-    def __init__(self, embedder: Embedder, reranker: Reranker | None, settings: Settings) -> None:
+    def __init__(
+        self,
+        embedder: Embedder,
+        reranker: Reranker | None,
+        settings: Settings,
+        cache: "Cache | None" = None,
+    ) -> None:
         self.embedder = embedder
         self.reranker = reranker
         self.settings = settings
+        self.cache = cache
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Query embedding, cached: identical questions are common in a company."""
+        key = None
+        if self.cache is not None:
+            key = self.cache.key("embedding", self.embedder.model_name, query)
+            cached = await self.cache.get_json(key)
+            if cached is not None:
+                return cached
+        vector = await asyncio.to_thread(self.embedder.embed_query, query)
+        if key is not None:
+            await self.cache.set_json(key, vector, self.settings.query_embedding_cache_ttl_s)
+        return vector
 
     async def search(
         self,
@@ -149,7 +172,7 @@ class Retriever:
 
         if mode in ("hybrid", "dense"):
             with timer.track("embed"):
-                vector = await asyncio.to_thread(self.embedder.embed_query, query)
+                vector = await self.embed_query(query)
             with timer.track("dense"):
                 ef_search = int(self.settings.hnsw_ef_search)
                 # Iterative scan: if the ACL filter discards most nearest neighbours, keep

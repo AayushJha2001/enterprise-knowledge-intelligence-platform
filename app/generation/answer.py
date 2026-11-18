@@ -2,12 +2,13 @@
 
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.cache import Cache, access_scope, normalize_query
 from app.core.config import Settings
 from app.core.security import Principal
 from app.generation.gateway import CitationDelta, ClaudeGateway, Completed, TextDelta
@@ -55,6 +56,7 @@ class AnswerResult:
     timings_ms: dict[str, float]
     request_id: str | None = None
     refusal_category: str | None = None
+    cached: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -114,11 +116,13 @@ class AnswerService:
         gateway: ClaudeGateway,
         session_factory: async_sessionmaker[AsyncSession],
         settings: Settings,
+        cache: Cache | None = None,
     ) -> None:
         self.retriever = retriever
         self.gateway = gateway
         self.session_factory = session_factory
         self.settings = settings
+        self.cache = cache
 
     async def stream(
         self,
@@ -126,7 +130,58 @@ class AnswerService:
         principal: Principal,
         document_ids: list[uuid.UUID] | None = None,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        """Yields (event, payload): sources, then text/citation deltas, then done."""
+        """Yields (event, payload): sources, then text/citation deltas, then done.
+
+        Answers are cached per access scope, generator and index version, and a cache hit
+        is replayed through the same events, so clients can't tell the difference except
+        for `cached: true` (and the speed).
+        """
+        key = await self._cache_key(question, principal, document_ids)
+        if key is not None:
+            started = time.perf_counter()
+            hit = await self.cache.get_json(key)
+            if hit is not None:
+                for event in _replay(hit, _ms_since(started)):
+                    yield event
+                return
+
+        sources: dict[str, Any] = {}
+        async for name, payload in self._generate(question, principal, document_ids):
+            if name == "sources":
+                sources = payload
+            elif (
+                name == "done"
+                and key is not None
+                and payload["status"] in ("answered", "no_relevant_sources")
+            ):
+                await self.cache.set_json(
+                    key, {"sources": sources, "done": payload}, self.settings.answer_cache_ttl_s
+                )
+            yield name, payload
+
+    async def _cache_key(
+        self, question: str, principal: Principal, document_ids: list[uuid.UUID] | None
+    ) -> str | None:
+        if self.cache is None:
+            return None
+        version = await self.cache.index_version()
+        if version < 0:
+            return None
+        return self.cache.key(
+            "answer",
+            version,
+            access_scope(principal),
+            getattr(self.gateway, "cache_id", type(self.gateway).__name__),
+            normalize_query(question),
+            sorted(map(str, document_ids or [])),
+        )
+
+    async def _generate(
+        self,
+        question: str,
+        principal: Principal,
+        document_ids: list[uuid.UUID] | None,
+    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         sources, search, relevant = await retrieve_for_generation(
             self.retriever, self.session_factory, self.settings, question, principal, document_ids
         )
@@ -201,3 +256,23 @@ class AnswerService:
 
 def _ms_since(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 2)
+
+
+def _replay(hit: dict[str, Any], lookup_ms: float) -> Iterator[tuple[str, dict[str, Any]]]:
+    yield "sources", hit["sources"]
+    done = hit["done"]
+    for block, segment in enumerate(done["segments"]):
+        yield "text", {"block": block, "text": segment["text"]}
+        for citation in segment["citations"]:
+            yield "citation", {"block": block, **citation}
+    yield (
+        "done",
+        {
+            **done,
+            "cached": True,
+            "usage": asdict(Usage()),  # this request spent nothing
+            "cost_usd": 0.0,
+            "timings_ms": {"cache_lookup": lookup_ms},
+            "request_id": None,
+        },
+    )

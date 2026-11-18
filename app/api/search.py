@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import Cache, access_scope, normalize_query
+from app.core.config import get_settings
 from app.core.security import PrincipalDep
 from app.db.session import get_session
 from app.retrieval.search import Retriever, SearchMode
@@ -54,6 +56,7 @@ class SearchResponse(BaseModel):
     reranked: bool
     results: list[SearchHitOut]
     timings_ms: dict[str, float]
+    cached: bool = False
 
 
 @router.post("/search", response_model=SearchResponse)
@@ -64,6 +67,24 @@ async def search(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SearchResponse:
     """Find the passages most relevant to a query, among documents the caller may read."""
+    cache: Cache = request.app.state.cache
+    version = await cache.index_version()
+    key = None
+    if version >= 0:
+        key = cache.key(
+            "search",
+            version,
+            access_scope(principal),
+            normalize_query(body.query),
+            body.top_k,
+            body.mode,
+            body.rerank,
+            sorted(map(str, body.document_ids or [])),
+        )
+        hit = await cache.get_json(key)
+        if hit is not None:
+            return SearchResponse(**{**hit, "cached": True})
+
     retriever: Retriever = request.app.state.retriever
     result = await retriever.search(
         session,
@@ -74,10 +95,15 @@ async def search(
         rerank=body.rerank,
         document_ids=body.document_ids,
     )
-    return SearchResponse(
+    response = SearchResponse(
         query=body.query,
         mode=body.mode,
         reranked=result.reranked,
         results=[SearchHitOut.model_validate(hit, from_attributes=True) for hit in result.hits],
         timings_ms=result.timings_ms,
     )
+    if key is not None:
+        await cache.set_json(
+            key, response.model_dump(mode="json"), get_settings().search_cache_ttl_s
+        )
+    return response

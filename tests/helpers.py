@@ -39,15 +39,24 @@ def create_group(name: str) -> uuid.UUID:
     return run_db(insert)
 
 
-def create_user(email: str, group_ids: list[uuid.UUID] = (), is_admin: bool = False) -> uuid.UUID:
+def create_user(
+    email: str,
+    group_ids: list[uuid.UUID] = (),
+    is_admin: bool = False,
+    password: str | None = None,
+) -> uuid.UUID:
+    from app.core.security import hash_password
+
+    password_hash = hash_password(password) if password else None
+
     async def insert(conn):
         user_id = uuid.uuid4()
         await conn.execute(
             text(
-                "INSERT INTO users (id, email, display_name, is_admin) "
-                "VALUES (:id, :email, :email, :is_admin)"
+                "INSERT INTO users (id, email, display_name, is_admin, password_hash) "
+                "VALUES (:id, :email, :email, :is_admin, :password_hash)"
             ),
-            {"id": user_id, "email": email, "is_admin": is_admin},
+            {"id": user_id, "email": email, "is_admin": is_admin, "password_hash": password_hash},
         )
         for group_id in group_ids:
             await conn.execute(
@@ -58,6 +67,14 @@ def create_user(email: str, group_ids: list[uuid.UUID] = (), is_admin: bool = Fa
         return user_id
 
     return run_db(insert)
+
+
+def bearer(user_id: uuid.UUID, token_version: int = 0) -> dict[str, str]:
+    """Authorization header for a user, as if they had logged in."""
+    from app.core.security import create_access_token
+
+    token = create_access_token(user_id, token_version, get_settings())
+    return {"Authorization": f"Bearer {token}"}
 
 
 def run_worker_once(embedder=None) -> str | None:
@@ -72,15 +89,22 @@ def run_worker_once(embedder=None) -> str | None:
     settings = get_settings()
 
     async def go():
+        from redis.asyncio import Redis
+
+        from app.core.cache import Cache
+
         engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
         try:
             return await process_next(
                 build_session_factory(engine),
                 LocalFileStorage(settings.upload_dir),
                 embedder or HashingEmbedder(settings.embedding_dim),
                 settings,
+                Cache(redis, settings),  # bumps the index version, like the real worker
             )
         finally:
+            await redis.aclose()
             await engine.dispose()
 
     return asyncio.run(go())

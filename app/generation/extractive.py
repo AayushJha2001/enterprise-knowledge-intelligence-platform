@@ -99,6 +99,8 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 class ExtractiveGateway:
+    cache_id = MODEL_NAME
+
     def __init__(self, embedder: Embedder, max_sentences: int = 3, margin: float = 0.06) -> None:
         self.embedder = embedder
         self.max_sentences = max_sentences

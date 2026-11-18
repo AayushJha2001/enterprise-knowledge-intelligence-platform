@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from app.api import ask, documents, health, search
+from app.api import admin, ask, auth, documents, health, search
+from app.core.cache import Cache
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import add_request_context
@@ -22,12 +23,14 @@ from app.retrieval.search import Retriever
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    settings.check_production_safety()
     configure_logging(settings.log_level)
 
     # Connection pools are created once per process and shared by all requests.
     app.state.db_engine = build_engine(settings)
     app.state.session_factory = build_session_factory(app.state.db_engine)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    app.state.cache = Cache(app.state.redis, settings)
     app.state.storage = LocalFileStorage(settings.upload_dir)
 
     # Models load once at startup (blocking, so off the event loop), not per request.
@@ -35,13 +38,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.to_thread(build_embedder, settings),
         asyncio.to_thread(build_reranker, settings),
     )
-    app.state.retriever = Retriever(embedder, reranker, settings)
+    app.state.retriever = Retriever(embedder, reranker, settings, app.state.cache)
 
     gateway = build_gateway(settings, embedder)
     app.state.answer_service = app.state.extraction_service = None
     if gateway is not None:
         app.state.answer_service = AnswerService(
-            app.state.retriever, gateway, app.state.session_factory, settings
+            app.state.retriever, gateway, app.state.session_factory, settings, app.state.cache
         )
         app.state.extraction_service = ExtractionService(
             app.state.retriever, gateway, app.state.session_factory, settings
@@ -62,10 +65,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     add_request_context(app)
-    app.include_router(health.router)
-    app.include_router(documents.router)
-    app.include_router(search.router)
-    app.include_router(ask.router)
+    for module in (health, auth, admin, documents, search, ask):
+        app.include_router(module.router)
     return app
 
 

@@ -68,8 +68,13 @@ class User(Base):
     id: Mapped[uuid.UUID] = _uuid_pk()
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    password_hash: Mapped[str | None] = mapped_column(String(255))  # set in Phase 5 (auth)
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # argon2id; None = no login
     is_admin: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    # Embedded in access tokens; bumping it (password change, deactivation, "log out
+    # everywhere") invalidates every token issued before.
+    token_version: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
 
     groups: Mapped[list["Group"]] = relationship(secondary=user_groups, back_populates="users")

@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEV_JWT_SECRET = "dev-only-insecure-jwt-secret-change-me"  # noqa: S105 - documented dev default
+
 
 class Settings(BaseSettings):
     """All runtime configuration, read from environment variables (or a local .env file)."""
@@ -61,6 +63,21 @@ class Settings(BaseSettings):
     reranker_provider: Literal["fastembed", "none"] = "fastembed"
     reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
 
+    # --- Authentication ---
+    # HS256 signing key for access tokens. The default is only for local development;
+    # the app refuses to start with it when ENVIRONMENT=production.
+    jwt_secret: SecretStr = SecretStr(DEV_JWT_SECRET)
+    access_token_ttl_minutes: int = 60
+    # Lock an email out after this many failed logins within the window (per client IP).
+    login_max_failures: int = 5
+    login_lockout_s: int = 900
+
+    # --- Caching (Redis) ---
+    cache_enabled: bool = True
+    search_cache_ttl_s: int = 600
+    answer_cache_ttl_s: int = 3600
+    query_embedding_cache_ttl_s: int = 86400
+
     # --- Answer generation ---
     # "auto": Claude when ANTHROPIC_API_KEY is set, otherwise the free offline extractive
     # answerer. "anthropic" requires the key (else /ask returns 503). "extractive" never
@@ -93,6 +110,14 @@ class Settings(BaseSettings):
     # A document stuck in "processing" this long (worker crashed) is put back in the queue.
     worker_stale_after_s: int = 900
     worker_max_attempts: int = 3
+
+    def check_production_safety(self) -> None:
+        """Fail fast on settings that must never reach production."""
+        if self.environment == "production" and (
+            self.jwt_secret.get_secret_value() == DEV_JWT_SECRET
+            or len(self.jwt_secret.get_secret_value()) < 32
+        ):
+            raise RuntimeError("Set JWT_SECRET to a random value of 32+ characters in production")
 
 
 @lru_cache

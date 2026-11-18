@@ -11,6 +11,7 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,6 +22,9 @@ from app.ingestion.chunking import chunk_blocks, embedding_text
 from app.ingestion.embeddings import Embedder
 from app.ingestion.parsers import ParseError, parse_document
 from app.ingestion.storage import FileStorage
+
+if TYPE_CHECKING:
+    from app.core.cache import Cache
 
 logger = logging.getLogger(__name__)
 
@@ -170,9 +174,14 @@ async def process_next(
     storage: FileStorage,
     embedder: Embedder,
     settings: Settings,
+    cache: "Cache | None" = None,
 ) -> str | None:
     """Claim and process one document. Returns its status, or None if the queue is empty."""
     document_id = await claim_next(session_factory)
     if document_id is None:
         return None
-    return await process_document(document_id, session_factory, storage, embedder, settings)
+    status = await process_document(document_id, session_factory, storage, embedder, settings)
+    if status == "ready" and cache is not None:
+        # New or changed chunks: cached searches and answers may now be incomplete.
+        await cache.bump_index_version()
+    return status

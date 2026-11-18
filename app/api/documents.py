@@ -3,8 +3,9 @@
 Uploading only stores the file and queues it (202 Accepted); the ingestion worker parses,
 chunks and embeds it in the background. Poll GET /documents/{id} until status is "ready".
 
-Authentication arrives in Phase 5; until then these endpoints are open, so only run the
-stack locally.
+Access: admins manage documents (upload, reindex, delete). Everyone else can list and read
+only documents shared with one of their groups; any other document id returns 404, so the
+API doesn't reveal that it exists.
 """
 
 import asyncio
@@ -33,7 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
-from app.db.models import Chunk, Document, Group
+from app.core.security import AdminDep, Principal, PrincipalDep
+from app.db.models import Chunk, Document, Group, document_access
 from app.db.session import get_session
 from app.ingestion.parsers import MIME_TYPES, detect_mime_type
 from app.ingestion.storage import FileStorage
@@ -112,10 +114,22 @@ def _storage(request: Request) -> FileStorage:
     return request.app.state.storage
 
 
-async def _get_document(session: AsyncSession, document_id: uuid.UUID) -> Document:
-    doc = await session.scalar(
-        select(Document).where(Document.id == document_id).options(selectinload(Document.groups))
+def _visible_to(principal: Principal):
+    """SQL condition: documents shared with one of the principal's groups."""
+    return Document.id.in_(
+        select(document_access.c.document_id).where(
+            document_access.c.group_id.in_(principal.group_ids)
+        )
     )
+
+
+async def _get_document(
+    session: AsyncSession, document_id: uuid.UUID, principal: Principal | None = None
+) -> Document:
+    query = select(Document).where(Document.id == document_id)
+    if principal is not None and not principal.is_admin:
+        query = query.where(_visible_to(principal))
+    doc = await session.scalar(query.options(selectinload(Document.groups)))
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     return doc
@@ -134,6 +148,7 @@ async def _get_document(session: AsyncSession, document_id: uuid.UUID) -> Docume
 async def upload_document(
     request: Request,
     session: SessionDep,
+    admin: AdminDep,
     file: Annotated[UploadFile, File(description="PDF, DOCX, Markdown, HTML or plain text")],
     title: Annotated[str | None, Form(max_length=500)] = None,
     group_ids: Annotated[
@@ -192,6 +207,7 @@ async def upload_document(
         size_bytes=len(data),
         status="pending",
         groups=groups,
+        uploaded_by=admin.user_id,
     )
     session.add(doc)
     try:
@@ -215,12 +231,16 @@ async def upload_document(
 @router.get("", response_model=DocumentList)
 async def list_documents(
     session: SessionDep,
+    principal: PrincipalDep,
     status_filter: Annotated[DocumentStatus | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentList:
     query = select(Document)
     count = select(func.count()).select_from(Document)
+    if not principal.is_admin:
+        query = query.where(_visible_to(principal))
+        count = count.where(_visible_to(principal))
     if status_filter:
         query = query.where(Document.status == status_filter)
         count = count.where(Document.status == status_filter)
@@ -239,19 +259,22 @@ async def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
-async def get_document(document_id: uuid.UUID, session: SessionDep) -> DocumentOut:
-    return DocumentOut.from_model(await _get_document(session, document_id))
+async def get_document(
+    document_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
+) -> DocumentOut:
+    return DocumentOut.from_model(await _get_document(session, document_id, principal))
 
 
 @router.get("/{document_id}/chunks", response_model=ChunkList)
 async def list_chunks(
     document_id: uuid.UUID,
     session: SessionDep,
+    principal: PrincipalDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ChunkList:
     """Inspect how a document was chunked (useful when tuning chunk sizes)."""
-    await _get_document(session, document_id)
+    await _get_document(session, document_id, principal)
     chunks = await session.scalars(
         select(Chunk)
         .where(Chunk.document_id == document_id)
@@ -284,7 +307,9 @@ async def list_chunks(
 @router.post(
     "/{document_id}/reindex", status_code=status.HTTP_202_ACCEPTED, response_model=DocumentOut
 )
-async def reindex_document(document_id: uuid.UUID, session: SessionDep) -> DocumentOut:
+async def reindex_document(
+    document_id: uuid.UUID, session: SessionDep, admin: AdminDep
+) -> DocumentOut:
     """Queue a document for processing again (e.g. after changing the chunking settings)."""
     doc = await _get_document(session, document_id)
     if doc.status in ("pending", "processing"):
@@ -297,11 +322,14 @@ async def reindex_document(document_id: uuid.UUID, session: SessionDep) -> Docum
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(request: Request, document_id: uuid.UUID, session: SessionDep) -> None:
+async def delete_document(
+    request: Request, document_id: uuid.UUID, session: SessionDep, admin: AdminDep
+) -> None:
     doc = await _get_document(session, document_id)
     storage_key = doc.storage_key
     await session.delete(doc)  # chunks and access rows cascade in the database
     await session.commit()
+    await request.app.state.cache.bump_index_version()  # drop cached results citing it
     # Delete the file only after the row is gone, so a failure never leaves a
     # document pointing at a missing file.
     await asyncio.to_thread(_storage(request).delete, storage_key)

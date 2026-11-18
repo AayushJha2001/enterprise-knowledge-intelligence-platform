@@ -1,0 +1,18 @@
+{
+  "_comment": "DEMO ONLY. These passwords are public. `python -m app.cli seed-demo` refuses to run when ENVIRONMENT=production.",
+  "groups": [
+    {"name": "hr", "description": "People team"},
+    {"name": "engineering", "description": "Software engineers and on-call"},
+    {"name": "all-staff", "description": "Every employee"}
+  ],
+  "users": [
+    {"email": "admin@northwind.example", "name": "Ada Admin", "password": "demo-admin-password", "is_admin": true},
+    {"email": "hana@northwind.example", "name": "Hana (HR)", "password": "demo-hana-password", "groups": ["hr", "all-staff"]},
+    {"email": "eli@northwind.example", "name": "Eli (Engineering)", "password": "demo-eli-password", "groups": ["engineering", "all-staff"]}
+  ],
+  "document_access": {
+    "Northwind Employee Handbook": ["all-staff"],
+    "Northwind Information Security Policy": ["all-staff"],
+    "Order Service Runbook": ["engineering"]
+  }
+}

@@ -9,6 +9,9 @@ import contextlib
 import logging
 import signal
 
+from redis.asyncio import Redis
+
+from app.core.cache import Cache
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import build_engine, build_session_factory
@@ -28,6 +31,8 @@ async def run_worker(
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
     storage = LocalFileStorage(settings.upload_dir)
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    cache = Cache(redis, settings)
     # Load the model before taking work, so a missing model fails fast at startup.
     embedder = embedder or await asyncio.to_thread(build_embedder, settings)
     logger.info("worker ready (embedding model: %s)", embedder.model_name)
@@ -35,7 +40,7 @@ async def run_worker(
     try:
         while not stop.is_set():
             try:
-                status = await process_next(session_factory, storage, embedder, settings)
+                status = await process_next(session_factory, storage, embedder, settings, cache)
             except Exception:
                 logger.exception("worker loop error; backing off")
                 status = None
@@ -45,6 +50,7 @@ async def run_worker(
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), settings.worker_poll_interval_s)
     finally:
+        await redis.aclose()
         await engine.dispose()
         logger.info("worker stopped")
 

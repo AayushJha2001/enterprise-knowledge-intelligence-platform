@@ -30,7 +30,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 - [x] **Phase 2 – Ingestion:** upload, PDF/DOCX/MD/HTML parsing, heading-aware chunking, embeddings, background worker
 - [x] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
 - [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; Claude or free offline generator
-- [ ] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
+- [x] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
 - [ ] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
 - [ ] **Phase 7 – UI & deploy:** chat UI with citations, Azure Container Apps
 
@@ -51,10 +51,15 @@ first worker start downloads the embedding model (~70 MB) into the `models` volu
 
 ## Ingesting documents
 
+Every endpoint except `/health/*` and `/auth/token` needs a bearer token (see
+[Users and access](#users-and-access)); uploading, reindexing and deleting need an admin.
+
 ```bash
-curl -F "file=@handbook.pdf" http://localhost:8000/documents          # 202, status "pending"
-curl http://localhost:8000/documents/<id>                             # poll until "ready"
-curl http://localhost:8000/documents/<id>/chunks                      # inspect chunking
+TOKEN=$(curl -s -d "username=admin@northwind.example&password=demo-admin-password" \
+  http://localhost:8000/auth/token | jq -r .access_token)
+curl -H "Authorization: Bearer $TOKEN" -F "file=@handbook.pdf" http://localhost:8000/documents
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/documents/<id>          # until "ready"
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/documents/<id>/chunks   # inspect chunks
 ```
 
 Supported: PDF, DOCX, Markdown, HTML, plain text (max 25 MB). Optional form fields:
@@ -83,8 +88,8 @@ minutes (crashed worker) is requeued.
 ## Searching
 
 ```bash
-curl -X POST http://localhost:8000/search -H "Content-Type: application/json" \
-  -d '{"query": "how much parental leave do I get?", "top_k": 5}'
+curl -X POST http://localhost:8000/search -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"query": "how much parental leave do I get?"}'
 ```
 
 Options: `mode` (`hybrid` default, or `dense` / `keyword` for comparison), `rerank`
@@ -106,17 +111,66 @@ Pipeline:
 only if the caller is an admin or in a group its document is shared with. Unshared documents
 are admin-only. `document_ids` can narrow results but never widen access.
 
-> Until Phase 5 adds login, callers act as a local admin, or as a specific user via an
-> `X-User-Id` header. This shortcut is refused when `ENVIRONMENT=production`.
-
 Sample documents for trying it out are in `samples/corpus/`.
+
+## Users and access
+
+There is no self sign-up. Create the first admin (prompts for a password, 12+ characters):
+
+```bash
+docker compose exec api python -m app.cli create-admin --email you@example.com --name "Your Name"
+```
+
+Or, for a demo, upload `samples/corpus/` and then create the demo groups and users and share
+the sample documents with them (refused when `ENVIRONMENT=production`; the passwords in
+`samples/demo-users.json` are public):
+
+```bash
+docker compose exec api python -m app.cli seed-demo
+```
+
+| User | Password | Groups | Can read |
+|---|---|---|---|
+| `admin@northwind.example` | `demo-admin-password` | admin | everything |
+| `hana@northwind.example` | `demo-hana-password` | hr, all-staff | handbook, security policy |
+| `eli@northwind.example` | `demo-eli-password` | engineering, all-staff | + order service runbook |
+
+**Endpoints:** `POST /auth/token` (OAuth2 password form; email as `username`),
+`GET /auth/me`, `POST /auth/password`, `POST /auth/logout-everywhere`. Admins:
+`/admin/users` and `/admin/groups` (CRUD) and `PUT /admin/documents/{id}/groups` to set who
+can read a document. The Swagger UI at `/docs` has an **Authorize** button.
+
+**How it works:**
+
+- Passwords are hashed with **argon2id**; login timing is the same for unknown emails.
+- Access tokens are **HS256 JWTs** (60 min) holding only the user id and a token version.
+  Admin rights and groups are **read from the database on every request**, so removing
+  someone from a group takes effect immediately, not when their token expires.
+- **Revocation:** changing a password, deactivating a user or "log out everywhere" bumps
+  the user's token version, which invalidates every token issued before it.
+- **Brute-force protection:** 5 failed logins per email and client address lock that pair
+  for 15 minutes (counter in Redis).
+- Non-admins see only documents shared with their groups; other ids return **404**, so the
+  API doesn't confirm they exist. Admins can't demote, deactivate or delete themselves.
+- The app **refuses to start in production** with the default or a short `JWT_SECRET`.
+
+## Caching
+
+Redis caches query embeddings (24 h), search results (10 min) and answers (1 h). A repeated
+question goes from ~3 s to ~30 ms end to end on a laptop; responses carry `cached: true`.
+
+- Keys include the caller's **access scope** (admin, or a hash of their sorted groups):
+  users with identical access share entries; users with different access never do.
+- Keys include an **index version** that the worker bumps after each ingestion, and the API
+  bumps on delete or sharing changes, invalidating everything at once without scanning keys.
+- Refused or truncated answers are never cached. If Redis is down, requests run uncached.
 
 ## Asking questions
 
 Works out of the box with **no API key and no cost**:
 
 ```bash
-python scripts/ask.py "How much parental leave does the secondary caregiver get?"
+python scripts/ask.py --email hana@northwind.example "How much parental leave does the secondary caregiver get?"
 ```
 
 ### Two answer generators, one interface
@@ -140,7 +194,7 @@ API:
 ```bash
 echo "ANTHROPIC_API_KEY=sk-ant-..." > .env        # bash / zsh
 docker compose up -d api
-python scripts/ask.py "How much parental leave do I get?"
+python scripts/ask.py --email hana@northwind.example "How much parental leave do I get?"
 ```
 
 On Windows PowerShell, `>` writes UTF-16, which Docker Compose can't read. Use:
@@ -203,9 +257,10 @@ Host ports: Postgres `5433`, Redis `6380`, API `8000` (chosen to avoid clashing 
 app/
   main.py            app factory, lifespan (DB + Redis pools, file storage)
   worker.py          ingestion worker process
-  core/              settings, JSON logging, request-id middleware, principal (who's asking)
+  cli.py             create-admin, seed-demo
+  core/              settings, logging, middleware, security (passwords, JWT, principal), cache
   db/                SQLAlchemy models, async session
-  api/               routers (health, documents, search)
+  api/               routers (health, auth, admin, documents, search, ask)
   ingestion/         parsers, chunking, embeddings, storage, pipeline (the job)
   retrieval/         hybrid search, RRF fusion, cross-encoder reranking
   generation/        Claude gateway, offline extractive gateway, prompts, cited answers,

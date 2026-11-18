@@ -13,7 +13,7 @@ from app.generation.extract import ExtractionService
 from app.generation.gateway import CitationDelta, Completed, JsonResult, TextDelta
 from app.generation.pricing import Usage
 from app.generation.prompts import ANSWER_SYSTEM_PROMPT, EXTRACT_SYSTEM_PROMPT
-from tests.helpers import create_group, create_user, ingest
+from tests.helpers import bearer, create_group, create_user, ingest
 
 HR_DOC = b"""# HR Handbook
 
@@ -97,7 +97,7 @@ def install(client: TestClient) -> Iterator:
 
 
 def ask_json(client: TestClient, question: str = QUESTION, user=None, **body) -> dict:
-    headers = {"X-User-Id": str(user)} if user else {}
+    headers = bearer(user) if user else {}
     response = client.post(
         "/ask", json={"question": question, "stream": False, **body}, headers=headers
     )
@@ -295,7 +295,7 @@ class TestExtract:
         response = client.post(
             "/extract",
             json={"query": "hotel cap", "fields": self.FIELDS[:1]},
-            headers={"X-User-Id": str(docs["outsider"])},
+            headers=bearer(docs["outsider"]),
         )
         body = response.json()
         assert body["status"] == "no_relevant_sources"

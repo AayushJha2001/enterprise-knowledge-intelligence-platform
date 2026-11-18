@@ -10,8 +10,7 @@ from dataclasses import dataclass
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import get_settings
-from tests.helpers import create_group, create_user, ingest
+from tests.helpers import bearer, create_group, create_user, ingest, run_db
 
 HR_DOC = b"""# HR Handbook
 
@@ -60,12 +59,12 @@ def corpus(client: TestClient) -> Corpus:
         hr_user=create_user("hr@example.com", [hr]),
         eng_user=create_user("eng@example.com", [eng]),
         no_group_user=create_user("new@example.com"),
-        admin_user=create_user("admin@example.com", is_admin=True),
+        admin_user=create_user("second-admin@example.com", is_admin=True),
     )
 
 
 def search(client: TestClient, query: str, user: uuid.UUID | None = None, **options):
-    headers = {"X-User-Id": str(user)} if user else {}
+    headers = bearer(user) if user else {}
     response = client.post("/search", json={"query": query, **options}, headers=headers)
     assert response.status_code == 200, response.text
     return response.json()
@@ -101,7 +100,7 @@ def test_dense_only_mode(client: TestClient, corpus: Corpus) -> None:
 
 
 class TestAccessControl:
-    def test_local_admin_sees_everything(self, client: TestClient, corpus: Corpus) -> None:
+    def test_admin_sees_everything(self, client: TestClient, corpus: Corpus) -> None:
         body = search(client, "parental leave deploy", top_k=50)
         assert doc_ids(body) == {corpus.hr_doc, corpus.eng_doc, corpus.board_doc}
 
@@ -128,17 +127,35 @@ class TestAccessControl:
         body = search(client, "Contoso", corpus.hr_user, document_ids=[corpus.board_doc])
         assert body["results"] == []
 
-    def test_unknown_user_is_rejected(self, client: TestClient, corpus: Corpus) -> None:
-        response = client.post(
-            "/search", json={"query": "leave"}, headers={"X-User-Id": str(uuid.uuid4())}
-        )
+    def test_token_for_unknown_user_is_rejected(self, client: TestClient, corpus: Corpus) -> None:
+        response = client.post("/search", json={"query": "leave"}, headers=bearer(uuid.uuid4()))
         assert response.status_code == 401
 
-    def test_dev_auth_is_disabled_in_production(
-        self, client: TestClient, corpus: Corpus, monkeypatch
+    def test_missing_token_is_rejected(self, client: TestClient, corpus: Corpus) -> None:
+        response = client.post("/search", json={"query": "leave"}, headers={"Authorization": ""})
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+
+    def test_group_change_applies_without_new_token(
+        self, client: TestClient, corpus: Corpus
     ) -> None:
-        monkeypatch.setattr(get_settings(), "environment", "production")
-        assert client.post("/search", json={"query": "leave"}).status_code == 401
+        from sqlalchemy import text
+
+        assert search(client, "parental leave", corpus.no_group_user)["results"] == []
+
+        async def add_to_hr(conn):
+            await conn.execute(
+                text(
+                    "INSERT INTO user_groups (user_id, group_id) "
+                    "SELECT :u, id FROM groups WHERE name = 'hr'"
+                ),
+                {"u": corpus.no_group_user},
+            )
+            await conn.commit()
+
+        run_db(add_to_hr)
+        # Same token as before: permissions are read from the database per request.
+        assert doc_ids(search(client, "parental leave", corpus.no_group_user)) == {corpus.hr_doc}
 
 
 def test_document_filter(client: TestClient, corpus: Corpus) -> None:

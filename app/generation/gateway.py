@@ -63,6 +63,11 @@ class ClaudeGateway:
         self._client = client
         self._settings = settings
 
+    @property
+    def cache_id(self) -> str:
+        """Identifies the generator configuration in answer-cache keys."""
+        return f"{self._settings.answer_model}:{self._settings.answer_effort}"
+
     def _common(self, system: str, messages: list[dict], max_tokens: int) -> dict[str, Any]:
         params: dict[str, Any] = {
             "model": self._settings.answer_model,
