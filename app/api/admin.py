@@ -2,18 +2,18 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.auth import MIN_PASSWORD_LENGTH, GroupRef
 from app.core.security import AdminDep, hash_password
-from app.db.models import Document, Group, User, document_access, user_groups
+from app.db.models import Document, Group, RequestTrace, User, document_access, user_groups
 from app.db.session import get_session
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -247,6 +247,114 @@ async def delete_user(user_id: uuid.UUID, admin: AdminDep, session: SessionDep) 
     user = await _user(session, user_id)
     await session.delete(user)
     await session.commit()
+
+
+# ---------------------------------------------------------------- observability
+
+
+class EndpointMetrics(BaseModel):
+    endpoint: str
+    requests: int
+    errors: int
+    cache_hit_rate: float
+    no_answer_rate: float  # "no_relevant_sources" (ask/extract) or "no_results" (search)
+    latency_p50_ms: float
+    latency_p95_ms: float
+    latency_max_ms: float
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
+class MetricsResponse(BaseModel):
+    window_hours: int
+    endpoints: list[EndpointMetrics]
+
+
+_METRICS_SQL = text(
+    """
+    SELECT endpoint,
+           count(*)                                                        AS requests,
+           count(*) FILTER (WHERE status = 'error')                        AS errors,
+           avg(cached::int)                                                AS cache_hit_rate,
+           avg((status IN ('no_relevant_sources', 'no_results'))::int)     AS no_answer_rate,
+           percentile_cont(0.5)  WITHIN GROUP (ORDER BY latency_ms)        AS p50,
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)        AS p95,
+           max(latency_ms)                                                 AS max_latency,
+           coalesce(sum(input_tokens), 0)                                  AS input_tokens,
+           coalesce(sum(output_tokens), 0)                                 AS output_tokens,
+           coalesce(sum(cost_usd), 0)                                      AS cost_usd
+      FROM request_traces
+     WHERE created_at > now() - make_interval(hours => :hours)
+     GROUP BY endpoint
+     ORDER BY endpoint
+    """
+)
+
+
+@router.get("/metrics", response_model=MetricsResponse)
+async def metrics(
+    admin: AdminDep,
+    session: SessionDep,
+    hours: Annotated[int, Query(ge=1, le=24 * 90)] = 24,
+) -> MetricsResponse:
+    """Latency percentiles, cache hit rate, no-answer rate, tokens and cost per endpoint."""
+    rows = await session.execute(_METRICS_SQL, {"hours": hours})
+    return MetricsResponse(
+        window_hours=hours,
+        endpoints=[
+            EndpointMetrics(
+                endpoint=r.endpoint,
+                requests=r.requests,
+                errors=r.errors,
+                cache_hit_rate=round(float(r.cache_hit_rate), 4),
+                no_answer_rate=round(float(r.no_answer_rate), 4),
+                latency_p50_ms=round(r.p50, 1),
+                latency_p95_ms=round(r.p95, 1),
+                latency_max_ms=round(r.max_latency, 1),
+                input_tokens=r.input_tokens,
+                output_tokens=r.output_tokens,
+                cost_usd=round(float(r.cost_usd), 6),
+            )
+            for r in rows
+        ],
+    )
+
+
+class TraceOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    endpoint: str
+    status: str
+    cached: bool
+    user_id: uuid.UUID | None
+    query: str | None
+    model: str | None
+    latency_ms: float
+    timings_ms: dict
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float | None
+    result_count: int
+    top_score: float | None
+    error: str | None
+
+
+@router.get("/traces", response_model=list[TraceOut])
+async def list_traces(
+    admin: AdminDep,
+    session: SessionDep,
+    endpoint: Literal["search", "ask", "extract"] | None = None,
+    status_filter: Annotated[str | None, Query(alias="status", max_length=30)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> list[TraceOut]:
+    """Most recent traces first; filter by endpoint or status (e.g. `error`)."""
+    query = select(RequestTrace).order_by(RequestTrace.created_at.desc()).limit(limit)
+    if endpoint:
+        query = query.where(RequestTrace.endpoint == endpoint)
+    if status_filter:
+        query = query.where(RequestTrace.status == status_filter)
+    return [TraceOut.model_validate(t, from_attributes=True) for t in await session.scalars(query)]
 
 
 # ---------------------------------------------------------------- document access

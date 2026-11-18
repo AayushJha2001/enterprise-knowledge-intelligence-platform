@@ -1,0 +1,17 @@
+{
+  "_comment": "CI quality gate for evals/datasets/northwind.jsonl. Set a little below the measured baseline (see README > Evaluation) so noise doesn't fail builds but real regressions do. Keys ending in _max are upper bounds. Latency is not gated: CI machines vary too much.",
+  "retrieval": {
+    "hybrid": {"hit@3": 0.9, "mrr@10": 0.9, "acl_leaks_max": 0},
+    "hybrid+rerank": {"hit@1": 0.95, "hit@3": 0.97, "mrr@10": 0.95, "acl_leaks_max": 0},
+    "dense": {"acl_leaks_max": 0},
+    "keyword": {"acl_leaks_max": 0}
+  },
+  "answers": {
+    "fact_recall": 0.88,
+    "grounded_rate": 0.93,
+    "citation_precision": 0.88,
+    "false_abstention_rate_max": 0.07,
+    "abstention_accuracy": 0.8,
+    "acl_leaks_max": 0
+  }
+}

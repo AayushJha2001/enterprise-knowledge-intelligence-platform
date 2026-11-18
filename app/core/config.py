@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lockout_s: int = 900
 
+    # --- Tracing ---
+    trace_enabled: bool = True
+    # Store question text in traces (useful for debugging and building eval sets; turn off
+    # if questions may contain personal data you must not retain).
+    trace_store_queries: bool = True
+
     # --- Caching (Redis) ---
     cache_enabled: bool = True
     search_cache_ttl_s: int = 600
@@ -93,7 +99,10 @@ class Settings(BaseSettings):
     answer_context_chunks: int = 8
     # If the best reranked passage scores below this, answer "not found" without calling
     # Claude: cheaper, and it can't be tempted to answer from general knowledge.
-    answer_min_relevance: float = 0.02
+    # Tuned on evals/datasets/northwind.jsonl (ms-marco-MiniLM-L-6-v2): any value in
+    # 0.0005-0.004 gave the fewest errors (was 0.02, which wrongly rejected 4 of 58
+    # answerable questions). Re-tune when the reranker or the corpus changes.
+    answer_min_relevance: float = 0.002
     # Server-side fallback: if a request is declined by a safety classifier, the API
     # retries it on another model in the same call.
     llm_fallbacks_enabled: bool = True

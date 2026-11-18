@@ -31,7 +31,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 - [x] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
 - [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; Claude or free offline generator
 - [x] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
-- [ ] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
+- [x] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
 - [ ] **Phase 7 – UI & deploy:** chat UI with citations, Azure Container Apps
 
 ## Quick start
@@ -231,6 +231,72 @@ Model settings: `claude-opus-5-5`, effort `low` (configurable via `ANSWER_EFFORT
 server-side fallback enabled so a request declined by a safety classifier is retried on
 another model. Refusals and truncated answers are reported in `status`.
 
+## Observability
+
+Every search, answer and extraction writes one row to `request_traces`: user, question
+(optional, `TRACE_STORE_QUERIES`), outcome, whether it was cached, per-stage timings,
+tokens, estimated cost, result count, top relevance score and the chunk ids used. Writing a
+trace never fails the request it describes.
+
+- `GET /admin/metrics?hours=24`: per endpoint request count, errors, cache hit rate,
+  no-answer rate, p50/p95/max latency, tokens and cost (SQL `percentile_cont` over traces).
+- `GET /admin/traces?endpoint=ask&status=error`: recent traces for debugging.
+
+Traces also feed evaluation work: the relevance-cutoff tuning below used the `top_score`
+recorded per question.
+
+## Evaluation
+
+```bash
+python -m evals.run --setup                        # upload + share samples/corpus, then evaluate
+python -m evals.run --check evals/thresholds.json  # exit 1 on regression (runs in CI)
+```
+
+`evals/datasets/northwind.jsonl` has **68 labelled questions** over the sample corpus:
+paraphrased questions, exact identifiers (`VPN-809`, `HR-100`), table lookups,
+unanswerable questions, and access-control probes (a user asking about a document they
+can't read). Each answerable question names the section that holds the answer and the facts
+an answer must contain. The harness calls the real HTTP API as each question's user, with
+`Cache-Control: no-cache`, and writes a Markdown + JSON report to `evals/reports/`.
+
+**Retrieval** (top 10; a result is relevant if it comes from the expected section):
+
+| config | hit@1 | hit@3 | MRR@10 | nDCG@10 | p50 latency | ACL leaks |
+|---|---|---|---|---|---|---|
+| dense (vector) | 0.95 | 1.00 | 0.972 | 0.979 | 25 ms | 0 |
+| keyword (full text) | 0.97 | 0.97 | 0.970 | 0.973 | 2 ms | 0 |
+| hybrid (RRF) | 0.93 | 0.98 | 0.961 | 0.970 | 5 ms | 0 |
+| **hybrid + reranker** | **1.00** | **1.00** | **1.000** | **1.000** | 826 ms | 0 |
+
+**Answers** (offline extractive generator, $0):
+
+| metric | value |
+|---|---|
+| fact recall / fully correct | 0.93 / 0.93 |
+| grounded (cites a source) | 0.98 |
+| citation precision | 0.93 |
+| false "not found" on answerable questions | 0.02 |
+| correct "not found" on unanswerable questions | 0.89 |
+| access-control leaks | 0 |
+| latency p50 / p95 | 1.7 s / 3.0 s (laptop CPU) |
+
+What the numbers showed:
+
+- **The reranker is the only configuration with perfect ranking, at ~0.8 s per query** on a
+  laptop CPU. Hybrid without it is slightly *below* dense alone here: OR-style keyword
+  matches on common words add noise in a corpus this small.
+- **The relevance cutoff was too strict.** At 0.02 the system said "not found" to 4 of 58
+  answerable questions. A sweep over the reranker scores stored in the traces showed that
+  any value from 0.0005 to 0.004 minimises errors; it is now 0.002 (false "not found" 7%
+  → 2%, fact recall 0.88 → 0.93), with no new wrong answers.
+- **The remaining misses are limits of the extractive generator**, not retrieval: it quoted
+  the SEV3 line for a SEV1 question, the symptoms instead of the fix, and "answered" *Who is
+  the CEO?* with a sentence mentioning Northwind. These are what an LLM generator fixes.
+
+Caveats: the corpus is small (3 documents, ~20 sections), so retrieval sits near its
+ceiling, and the cutoff was tuned on the same questions it is scored on. A larger corpus
+and a held-out question set are the next step.
+
 ## Development
 
 Run lint and tests inside the container. Tests use a separate `ekip_test` database (created
@@ -267,6 +333,7 @@ app/
                      structured extraction, pricing
 scripts/ask.py       command-line client for /ask
 samples/corpus/      fictional company documents for demos and evals
+evals/               labelled dataset, metrics, harness, CI thresholds
 migrations/          Alembic migrations
 tests/               integration tests
 .github/workflows/   CI: lint, migrate, test, downgrade check, prod image build

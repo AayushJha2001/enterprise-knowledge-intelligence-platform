@@ -129,6 +129,7 @@ class AnswerService:
         question: str,
         principal: Principal,
         document_ids: list[uuid.UUID] | None = None,
+        use_cache: bool = True,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Yields (event, payload): sources, then text/citation deltas, then done.
 
@@ -137,7 +138,7 @@ class AnswerService:
         for `cached: true` (and the speed).
         """
         key = await self._cache_key(question, principal, document_ids)
-        if key is not None:
+        if key is not None and use_cache:  # use_cache=False still refreshes the entry
             started = time.perf_counter()
             hit = await self.cache.get_json(key)
             if hit is not None:

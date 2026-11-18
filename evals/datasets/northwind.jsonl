@@ -1,0 +1,68 @@
+{"id": "hr-core-hours", "category": "paraphrase", "question": "What are the core collaboration hours?", "expected_sections": ["Core hours"], "expected_facts": ["10:00", "15:00"]}
+{"id": "hr-weekly-hours", "category": "paraphrase", "question": "How many hours per week am I expected to work on average?", "expected_sections": ["Core hours"], "expected_facts": ["40 hours"]}
+{"id": "hr-wfh-days", "category": "paraphrase", "question": "How many days a week can I work from home?", "expected_sections": ["Remote work"], "expected_facts": ["three days"]}
+{"id": "hr-work-abroad", "category": "paraphrase", "question": "Can I work remotely from another country, and for how long?", "expected_sections": ["Remote work"], "expected_facts": ["20 working days"]}
+{"id": "hr-fully-remote-approval", "category": "paraphrase", "question": "Who has to approve a fully remote arrangement?", "expected_sections": ["Remote work"], "expected_facts": ["manager", "People Team"]}
+{"id": "hr-vacation-days", "category": "paraphrase", "question": "How many vacation days do full-time staff get?", "expected_sections": ["Annual leave"], "expected_facts": ["25 days"]}
+{"id": "hr-carry-over", "category": "paraphrase", "question": "Can I carry unused holiday over to next year?", "expected_sections": ["Annual leave"], "expected_facts": ["5 unused days", "31 March"]}
+{"id": "hr-part-time-leave", "category": "paraphrase", "question": "How is annual leave worked out for part-time employees?", "expected_sections": ["Annual leave"], "expected_facts": ["proportion"]}
+{"id": "hr-sick-notify", "category": "paraphrase", "question": "By what time do I need to tell my manager I'm off sick?", "expected_sections": ["Sick leave"], "expected_facts": ["10:00"]}
+{"id": "hr-doctor-note", "category": "paraphrase", "question": "When do I need a doctor's note?", "expected_sections": ["Sick leave"], "expected_facts": ["fourth consecutive day"]}
+{"id": "hr-sick-vs-annual", "category": "paraphrase", "question": "Do sick days count against my annual leave?", "expected_sections": ["Sick leave"], "expected_facts": ["do not reduce"]}
+{"id": "hr-primary-caregiver", "category": "paraphrase", "question": "How much paid leave does the primary caregiver get after a birth?", "expected_sections": ["Parental leave"], "expected_facts": ["16 weeks"]}
+{"id": "hr-new-dads", "category": "paraphrase", "question": "How much time off do new dads get?", "expected_sections": ["Parental leave"], "expected_facts": ["6 weeks"]}
+{"id": "hr-parental-notice", "category": "paraphrase", "question": "How far in advance must I request parental leave?", "expected_sections": ["Parental leave"], "expected_facts": ["8 weeks"]}
+{"id": "hr-parental-split", "category": "paraphrase", "question": "Can the secondary caregiver split their leave into parts?", "expected_sections": ["Parental leave"], "expected_facts": ["three blocks"]}
+{"id": "hr-short-flight-class", "category": "paraphrase", "question": "Which class can I book for a 4 hour flight?", "expected_sections": ["Travel"], "expected_facts": ["Economy"]}
+{"id": "hr-long-flight-class", "category": "paraphrase", "question": "Is premium economy allowed on long-haul flights?", "expected_sections": ["Travel"], "expected_facts": ["premium economy"]}
+{"id": "hr-hotel-cap", "category": "paraphrase", "question": "What is the maximum I can spend on a hotel per night?", "expected_sections": ["Travel"], "expected_facts": ["150 EUR"]}
+{"id": "hr-hotel-zurich", "category": "paraphrase", "question": "What is the hotel limit in Zurich?", "expected_sections": ["Travel"], "expected_facts": ["220 EUR"]}
+{"id": "hr-train-booking", "category": "paraphrase", "question": "Where should I book train tickets for business travel?", "expected_sections": ["Travel"], "expected_facts": ["travel portal"]}
+{"id": "hr-claim-deadline", "category": "paraphrase", "question": "What is the deadline for submitting expense claims?", "expected_sections": ["Claims"], "expected_facts": ["30 days"]}
+{"id": "hr-receipt", "category": "paraphrase", "question": "When do I need an itemised receipt?", "expected_sections": ["Claims"], "expected_facts": ["25 EUR"]}
+{"id": "hr-alcohol", "category": "paraphrase", "question": "Can I expense drinks at dinner?", "expected_sections": ["Claims"], "expected_facts": ["not reimbursed"]}
+{"id": "hr-reimbursement-timing", "category": "paraphrase", "question": "When will I be paid back for expenses?", "expected_sections": ["Claims"], "expected_facts": ["monthly salary"]}
+{"id": "hr-home-office-budget", "category": "paraphrase", "question": "How much budget do I get for a home office setup?", "expected_sections": ["Equipment"], "expected_facts": ["500 EUR"]}
+{"id": "hr-laptop-sizes", "category": "paraphrase", "question": "What laptop sizes can new employees choose from?", "expected_sections": ["Equipment"], "expected_facts": ["14-inch", "16-inch"]}
+{"id": "hr-return-laptop", "category": "paraphrase", "question": "When do I have to give back my laptop after I leave the company?", "expected_sections": ["Equipment"], "expected_facts": ["10 working days"]}
+{"id": "hr-policy-owner", "category": "identifier", "question": "Who owns policy HR-100?", "expected_sections": ["Northwind Employee Handbook"], "expected_facts": ["People Team"]}
+{"id": "hr-contractors", "category": "paraphrase", "question": "Does the employee handbook apply to contractors?", "expected_sections": ["Northwind Employee Handbook"], "expected_facts": ["agency agreement"]}
+{"id": "sec-password-length", "category": "paraphrase", "question": "How long does my password have to be?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["14 characters"]}
+{"id": "sec-sms-mfa", "category": "paraphrase", "question": "Can I use text message codes for two-factor authentication?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["not accepted"]}
+{"id": "sec-mfa-systems", "category": "paraphrase", "question": "Which systems require multi-factor authentication?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["VPN"]}
+{"id": "sec-lockout-duration", "category": "paraphrase", "question": "How long is my account locked after too many wrong passwords?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["30 minutes"]}
+{"id": "sec-lockout-attempts", "category": "paraphrase", "question": "How many failed sign-in attempts are allowed before lockout?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["5 failed"]}
+{"id": "sec-reset-password", "category": "paraphrase", "question": "I forgot my password. How do I reset it?", "expected_sections": ["Passwords and sign-in"], "expected_facts": ["self-service portal"]}
+{"id": "sec-public-wifi", "category": "paraphrase", "question": "Am I allowed to work on public Wi-Fi in a cafe?", "expected_sections": ["Remote access"], "expected_facts": ["VPN"]}
+{"id": "sec-vpn-809", "category": "identifier", "question": "VPN-809", "expected_sections": ["Remote access"], "expected_facts": ["certificate"]}
+{"id": "sec-cert-expired", "category": "paraphrase", "question": "My VPN says the device certificate expired. What do I do?", "expected_sections": ["Remote access"], "expected_facts": ["Renew certificate"]}
+{"id": "sec-payment-data", "category": "table", "question": "How must customer payment data be handled?", "expected_sections": ["Data classification"], "expected_facts": ["Restricted"]}
+{"id": "sec-salary-class", "category": "table", "question": "What data classification do salaries fall under?", "expected_sections": ["Data classification"], "expected_facts": ["Confidential"]}
+{"id": "sec-phishing-deadline", "category": "paraphrase", "question": "How quickly must I report a phishing email?", "expected_sections": ["Reporting incidents"], "expected_facts": ["1 hour"]}
+{"id": "sec-lost-laptop-ext", "category": "identifier", "question": "Which phone extension do I call to report a lost laptop?", "expected_sections": ["Reporting incidents"], "expected_facts": ["4444"]}
+{"id": "sec-delete-phish", "category": "paraphrase", "question": "Should I delete a suspicious email I received?", "expected_sections": ["Reporting incidents"], "expected_facts": ["do not delete"]}
+{"id": "sec-policy-scope", "category": "identifier", "question": "Who does policy SEC-201 apply to?", "expected_sections": ["Information Security Policy"], "expected_facts": ["service accounts"]}
+{"id": "eng-deploy-approval", "category": "paraphrase", "question": "Who needs to approve a production deploy?", "expected_sections": ["Release process"], "expected_facts": ["second engineer"]}
+{"id": "eng-change-freeze", "category": "paraphrase", "question": "When is the December change freeze?", "expected_sections": ["Release process"], "expected_facts": ["15 December", "5 January"]}
+{"id": "eng-friday-deploy", "category": "paraphrase", "question": "Can I ship to production late on a Friday?", "expected_sections": ["Release process"], "expected_facts": ["16:00"]}
+{"id": "eng-rollback", "category": "paraphrase", "question": "How do I roll back a bad release?", "expected_sections": ["Rollback"], "expected_facts": ["previous release tag"]}
+{"id": "eng-destructive-migration", "category": "paraphrase", "question": "What if the deploy I want to undo included a destructive migration?", "expected_sections": ["Rollback"], "expected_facts": ["database on-call"]}
+{"id": "eng-sev1", "category": "paraphrase", "question": "What counts as a SEV1 incident?", "expected_sections": ["Severity levels"], "expected_facts": ["5 percent"]}
+{"id": "eng-sev2-latency", "category": "paraphrase", "question": "At what latency does an incident become SEV2?", "expected_sections": ["Severity levels"], "expected_facts": ["2 seconds"]}
+{"id": "eng-ord-5003", "category": "identifier", "question": "ORD-5003", "expected_sections": ["Error ORD-5003"], "expected_facts": ["inventory reservation timed out"]}
+{"id": "eng-restart-consumer", "category": "paraphrase", "question": "Which command restarts the reservation consumer?", "expected_sections": ["Error ORD-5003"], "expected_facts": ["kubectl rollout restart"]}
+{"id": "eng-too-many-connections", "category": "paraphrase", "question": "Every endpoint times out and the logs say too many connections. What should I do?", "expected_sections": ["Database connection exhaustion"], "expected_facts": ["4 pods"]}
+{"id": "eng-pool-size", "category": "paraphrase", "question": "What is the database connection pool size per pod?", "expected_sections": ["Database connection exhaustion"], "expected_facts": ["20 per pod"]}
+{"id": "eng-log-retention", "category": "paraphrase", "question": "How long are logs kept for the order service?", "expected_sections": ["Monitoring"], "expected_facts": ["30 days"]}
+{"id": "eng-dashboards", "category": "paraphrase", "question": "Where can I find the order service dashboards?", "expected_sections": ["Monitoring"], "expected_facts": ["Grafana"]}
+{"id": "eng-owner-team", "category": "paraphrase", "question": "Which team owns the order service?", "expected_sections": ["Order Service Runbook"], "expected_facts": ["Checkout Platform"]}
+{"id": "na-dental", "category": "unanswerable", "question": "Who is our dental insurance provider?"}
+{"id": "na-company-car", "category": "unanswerable", "question": "How do I request a company car?"}
+{"id": "na-stock-options", "category": "unanswerable", "question": "What is the vesting schedule for stock options?"}
+{"id": "na-ceo", "category": "unanswerable", "question": "Who is the CEO of Northwind?"}
+{"id": "na-geography", "category": "unanswerable", "question": "What is the capital of Australia?"}
+{"id": "na-printer", "category": "unanswerable", "question": "How do I set up the office printer?"}
+{"id": "acl-hana-ord-5003", "category": "acl", "user": "hana", "question": "How do I fix error ORD-5003?", "forbidden_documents": ["Order Service Runbook"]}
+{"id": "acl-hana-freeze", "category": "acl", "user": "hana", "question": "When is the December change freeze for deployments?", "forbidden_documents": ["Order Service Runbook"]}
+{"id": "acl-hana-pool", "category": "acl", "user": "hana", "question": "What is the database connection pool size per pod?", "forbidden_documents": ["Order Service Runbook"]}
+{"id": "acl-hana-allowed", "category": "acl", "user": "hana", "question": "How much paid leave does the primary caregiver get?", "expected_sections": ["Parental leave"], "expected_facts": ["16 weeks"], "forbidden_documents": ["Order Service Runbook"]}

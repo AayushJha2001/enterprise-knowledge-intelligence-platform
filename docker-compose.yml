@@ -19,6 +19,7 @@ x-app: &app
     - ./migrations:/code/migrations
     - ./tests:/code/tests
     - ./samples:/code/samples
+    - ./evals:/code/evals
     - uploads:/data/uploads
     - models:/data/models
 

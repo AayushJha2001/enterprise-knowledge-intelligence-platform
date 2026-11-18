@@ -16,6 +16,7 @@ from sqlalchemy import (
     Column,
     Computed,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -173,3 +174,32 @@ class Chunk(Base):
     created_at: Mapped[datetime] = _created_at()
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class RequestTrace(Base):
+    """One row per search, answer or extraction: what happened, how long, what it cost."""
+
+    __tablename__ = "request_traces"
+    __table_args__ = (Index("ix_request_traces_endpoint_created_at", "endpoint", "created_at"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    endpoint: Mapped[str] = mapped_column(String(20), nullable=False)  # search | ask | extract
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    query: Mapped[str | None] = mapped_column(Text)  # None when TRACE_STORE_QUERIES=false
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    cached: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    timings_ms: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}", nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    top_score: Mapped[float | None] = mapped_column(Float)
+    source_chunk_ids: Mapped[list[str]] = mapped_column(JSONB, server_default="[]", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
@@ -11,7 +12,9 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import AfterValidator, BaseModel, Field, field_validator
 
-from app.core.security import PrincipalDep
+from app.api.search import wants_fresh
+from app.core.security import Principal, PrincipalDep
+from app.core.tracing import Trace
 from app.generation.answer import AnswerService
 from app.generation.extract import ExtractionService, FieldSpec, FieldType
 
@@ -96,7 +99,14 @@ async def ask(body: AskRequest, request: Request, principal: PrincipalDep):
     An `error` event replaces `done` if generation fails mid-stream.
     """
     service: AnswerService = _service(request, "answer_service")
-    events = service.stream(body.question, principal, body.document_ids)
+    events = _traced(
+        service.stream(
+            body.question, principal, body.document_ids, use_cache=not wants_fresh(request)
+        ),
+        request,
+        principal,
+        body.question,
+    )
 
     if body.stream:
 
@@ -116,17 +126,22 @@ async def ask(body: AskRequest, request: Request, principal: PrincipalDep):
         )
 
     sources: list[dict] = []
+    done: dict | None = None
     try:
+        # Consume every event (no early return), so the tracing wrapper finishes and
+        # records its trace before the response is sent.
         async for name, payload in events:
             if name == "sources":
                 sources = payload["sources"]
             elif name == "done":
-                return {**payload, "sources": sources}
+                done = payload
     except Exception as exc:
         logger.exception("answer generation failed")
         code, message = _upstream_error(exc)
         raise HTTPException(code, message) from exc
-    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Answer stream ended early")
+    if done is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Answer stream ended early")
+    return {**done, "sources": sources}
 
 
 @router.post("/extract")
@@ -138,10 +153,73 @@ async def extract(body: ExtractRequest, request: Request, principal: PrincipalDe
     """
     service: ExtractionService = _service(request, "extraction_service")
     fields = [FieldSpec(f.name, f.description, f.type) for f in body.fields]
+    started = time.perf_counter()
+    trace = Trace(
+        endpoint="extract",
+        status="error",
+        latency_ms=0.0,
+        user_id=principal.user_id,
+        request_id=getattr(request.state, "request_id", None),
+        query=body.query,
+    )
     try:
         result = await service.extract(body.query, fields, principal, body.document_ids)
     except Exception as exc:
         logger.exception("extraction failed")
+        trace.error = f"{type(exc).__name__}: {exc}"[:2000]
         code, message = _upstream_error(exc)
         raise HTTPException(code, message) from exc
-    return result.to_dict()
+    else:
+        payload = result.to_dict()
+        trace.status = result.status
+        trace.model = result.model
+        trace.cost_usd = result.cost_usd
+        trace.apply_usage(payload["usage"])
+        trace.timings_ms = result.timings_ms
+        trace.result_count = len(result.sources)
+        trace.top_score = result.sources[0]["score"] if result.sources else None
+        trace.source_chunk_ids = [str(s["chunk_id"]) for s in result.sources]
+        return payload
+    finally:
+        trace.latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        await request.app.state.tracer.record(trace)
+
+
+async def _traced(
+    events: AsyncIterator[tuple[str, dict[str, Any]]],
+    request: Request,
+    principal: Principal,
+    question: str,
+) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+    """Pass answer events through unchanged and record one trace when they end."""
+    started = time.perf_counter()
+    trace = Trace(
+        endpoint="ask",
+        status="incomplete",  # stays so if the client disconnects mid-stream
+        latency_ms=0.0,
+        user_id=principal.user_id,
+        request_id=getattr(request.state, "request_id", None),
+        query=question,
+    )
+    try:
+        async for name, payload in events:
+            if name == "sources":
+                sources = payload["sources"]
+                trace.result_count = len(sources)
+                trace.top_score = sources[0]["score"] if sources else None
+                trace.source_chunk_ids = [str(s["chunk_id"]) for s in sources]
+            elif name == "done":
+                trace.status = payload["status"]
+                trace.cached = payload.get("cached", False)
+                trace.model = payload["model"]
+                trace.cost_usd = payload["cost_usd"]
+                trace.timings_ms = payload["timings_ms"]
+                trace.apply_usage(payload["usage"])
+            yield name, payload
+    except Exception as exc:
+        trace.status = "error"
+        trace.error = f"{type(exc).__name__}: {exc}"[:2000]
+        raise
+    finally:
+        trace.latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        await request.app.state.tracer.record(trace)

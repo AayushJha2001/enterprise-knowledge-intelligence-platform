@@ -10,6 +10,7 @@ from app.core.cache import Cache
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import add_request_context
+from app.core.tracing import TraceRecorder
 from app.db.session import build_engine, build_session_factory
 from app.generation.answer import AnswerService
 from app.generation.extract import ExtractionService
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
     app.state.cache = Cache(app.state.redis, settings)
     app.state.storage = LocalFileStorage(settings.upload_dir)
+    app.state.tracer = TraceRecorder(app.state.session_factory, settings)
 
     # Models load once at startup (blocking, so off the event loop), not per request.
     embedder, reranker = await asyncio.gather(
