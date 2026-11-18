@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -59,6 +60,33 @@ class Settings(BaseSettings):
     # "fastembed" runs a local cross-encoder; "none" skips reranking (tests, ablations).
     reranker_provider: Literal["fastembed", "none"] = "fastembed"
     reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+
+    # --- Answer generation ---
+    # "auto": Claude when ANTHROPIC_API_KEY is set, otherwise the free offline extractive
+    # answerer. "anthropic" requires the key (else /ask returns 503). "extractive" never
+    # calls an API.
+    llm_provider: Literal["auto", "anthropic", "extractive"] = "auto"
+    anthropic_api_key: SecretStr | None = None
+    answer_model: str = "claude-opus-5-5"
+    # Thinking depth. "low" keeps grounded Q&A fast; raise it if the evals show answers
+    # missing multi-step reasoning across sources. (Opus 5.5's own default is "medium".)
+    answer_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
+    answer_max_tokens: int = 64000
+    # Passages given to Claude as search results.
+    answer_context_chunks: int = 8
+    # If the best reranked passage scores below this, answer "not found" without calling
+    # Claude: cheaper, and it can't be tempted to answer from general knowledge.
+    answer_min_relevance: float = 0.02
+    # Server-side fallback: if a request is declined by a safety classifier, the API
+    # retries it on another model in the same call.
+    llm_fallbacks_enabled: bool = True
+    llm_timeout_s: float = 120.0
+
+    @field_validator("anthropic_api_key", mode="before")
+    @classmethod
+    def empty_key_means_unset(cls, value: object) -> object:
+        # docker compose passes "" when the variable isn't set anywhere.
+        return None if isinstance(value, str) and not value.strip() else value
 
     # --- Ingestion worker ---
     worker_poll_interval_s: float = 2.0

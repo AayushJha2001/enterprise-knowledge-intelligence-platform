@@ -210,13 +210,21 @@ class Retriever:
         return SearchResult(hits=hits[:top_k], reranked=use_reranker, timings_ms=timer.timings)
 
 
+def location(document_title: str | None, section_path: str | None) -> str:
+    """'Title > Section > Subsection', without repeating a top heading equal to the title."""
+    parts = [p.strip() for p in (section_path or "").split(" > ") if p.strip()]
+    if document_title and parts and parts[0].casefold() == document_title.strip().casefold():
+        parts = parts[1:]
+    return " > ".join([document_title, *parts] if document_title else parts)
+
+
 def _rerank_text(hit: SearchHit, max_chars: int) -> str:
     """Location header + the start of the chunk, cut at a word boundary.
 
     The header gives the cross-encoder the same context the embedding saw. Truncation
     bounds latency; the cost is that the reranker can't see the end of long chunks.
     """
-    header = " > ".join(p for p in (hit.document_title, hit.section_path) if p)
+    header = location(hit.document_title, hit.section_path)
     text = f"{header}\n{hit.content}" if header else hit.content
     if len(text) <= max_chars:
         return text

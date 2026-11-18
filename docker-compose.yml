@@ -12,6 +12,8 @@ x-app: &app
     UPLOAD_DIR: /data/uploads
     MODEL_CACHE_DIR: /data/models
     EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fastembed}
+    # Read from your shell or from a .env file next to this compose file (never committed).
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   volumes:
     - ./app:/code/app
     - ./migrations:/code/migrations

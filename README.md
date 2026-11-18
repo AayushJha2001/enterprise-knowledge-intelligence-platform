@@ -29,7 +29,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 - [x] **Phase 1 – Foundation:** project layout, Docker Compose, config, schema + migrations, health probes, structured logs, CI
 - [x] **Phase 2 – Ingestion:** upload, PDF/DOCX/MD/HTML parsing, heading-aware chunking, embeddings, background worker
 - [x] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
-- [ ] **Phase 4 – Answering:** streamed, cited answers; structured extraction endpoint
+- [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; Claude or free offline generator
 - [ ] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
 - [ ] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
 - [ ] **Phase 7 – UI & deploy:** chat UI with citations, Azure Container Apps
@@ -111,6 +111,72 @@ are admin-only. `document_ids` can narrow results but never widen access.
 
 Sample documents for trying it out are in `samples/corpus/`.
 
+## Asking questions
+
+Works out of the box with **no API key and no cost**:
+
+```bash
+python scripts/ask.py "How much parental leave does the secondary caregiver get?"
+```
+
+### Two answer generators, one interface
+
+| `LLM_PROVIDER` | Used when | What it does |
+|---|---|---|
+| `extractive` | default without a key | Offline. Picks the sentences from the retrieved passages that best match the question (local embeddings) and cites each one. Free, ~1 s on a laptop CPU. |
+| `anthropic` | default when `ANTHROPIC_API_KEY` is set | Claude writes the answer from the passages, with native citations. |
+
+Both receive the same `search_result` messages and emit the same events, so the API,
+streaming format and citations are identical; switching is a config change. The extractive
+generator can't combine facts, apply conditions ("220 EUR in Paris" vs "150 EUR elsewhere")
+or rephrase. It quotes. `/extract` in offline mode is a heuristic (best-matching sentence;
+first number in it for numeric fields; booleans left null).
+
+### Using Claude (optional, paid)
+
+Put a key in a `.env` file next to `docker-compose.yml` (git ignores it), then restart the
+API:
+
+```bash
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env        # bash / zsh
+docker compose up -d api
+python scripts/ask.py "How much parental leave do I get?"
+```
+
+On Windows PowerShell, `>` writes UTF-16, which Docker Compose can't read. Use:
+
+```powershell
+Set-Content -Path .env -Value "ANTHROPIC_API_KEY=sk-ant-..." -Encoding ascii
+```
+
+`POST /ask` with `{"question": "..."}` streams server-sent events: `sources` (the numbered
+passages), `text` and `citation` deltas, then `done` with the full answer (Markdown with
+`[n]` markers), per-segment citations, token usage, estimated cost and timings. Send
+`"stream": false` for a single JSON response.
+
+`POST /extract` fills named fields as schema-validated JSON, each with the numbers of the
+passages that support it:
+
+```json
+{"query": "hotel expense policy",
+ "fields": [{"name": "cap_paris", "description": "Hotel cap per night in Paris", "type": "number"}]}
+```
+
+How answers stay grounded:
+
+- Passages go to Claude as `search_result` blocks with citations enabled, so every claim
+  comes back linked to the passage (and paragraph) it came from. `grounded: false` flags an
+  answer with no citations at all.
+- Only passages the caller may read are retrieved, so the model never sees anything else.
+- If nothing relevant is found (no results, or the best reranked passage scores below
+  `ANSWER_MIN_RELEVANCE`), the API answers "not found" **without calling the model**.
+- The system prompt treats passages as data, not instructions (prompt-injection defense).
+- Retrieval uses its own short DB session, released before the model call starts.
+
+Model settings: `claude-opus-5-5`, effort `low` (configurable via `ANSWER_EFFORT`), with
+server-side fallback enabled so a request declined by a safety classifier is retried on
+another model. Refusals and truncated answers are reported in `status`.
+
 ## Development
 
 Run lint and tests inside the container. Tests use a separate `ekip_test` database (created
@@ -142,6 +208,9 @@ app/
   api/               routers (health, documents, search)
   ingestion/         parsers, chunking, embeddings, storage, pipeline (the job)
   retrieval/         hybrid search, RRF fusion, cross-encoder reranking
+  generation/        Claude gateway, offline extractive gateway, prompts, cited answers,
+                     structured extraction, pricing
+scripts/ask.py       command-line client for /ask
 samples/corpus/      fictional company documents for demos and evals
 migrations/          Alembic migrations
 tests/               integration tests

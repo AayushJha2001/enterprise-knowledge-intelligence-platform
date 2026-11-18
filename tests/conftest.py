@@ -23,6 +23,7 @@ os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="ekip-test-uploads-")
 os.environ["EMBEDDING_PROVIDER"] = "hash"
 os.environ["RERANKER_PROVIDER"] = "none"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["ANTHROPIC_API_KEY"] = ""  # tests use a fake gateway; never call the real API
 
 from collections.abc import Iterator  # noqa: E402
 
