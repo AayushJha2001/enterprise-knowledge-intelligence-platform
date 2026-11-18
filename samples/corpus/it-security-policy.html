@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Northwind Information Security Policy</title>
+</head>
+<body>
+  <nav>Intranet | IT | Security</nav>
+  <main>
+    <h1>Information Security Policy</h1>
+    <p>Policy SEC-201. Owner: Information Security. Applies to all employees, contractors and
+      service accounts with access to Northwind systems.</p>
+
+    <h2>Passwords and sign-in</h2>
+    <p>Passwords must be at least 14 characters long. Use the company password manager to
+      generate and store them; never reuse a work password on another site.</p>
+    <p>Multi-factor authentication (MFA) is mandatory for email, VPN, the HR portal and all
+      production systems. Use the authenticator app; SMS codes are not accepted.</p>
+    <p>If you forget your password, reset it at the self-service portal. After 5 failed
+      sign-in attempts the account is locked for 30 minutes.</p>
+
+    <h2>Remote access</h2>
+    <p>Connect through the corporate VPN whenever you work outside the office. Public Wi-Fi
+      may only be used with the VPN switched on.</p>
+    <p>If the VPN shows error VPN-809, your device certificate has expired: open the device
+      management app and choose <b>Renew certificate</b>, then restart the VPN client.</p>
+
+    <h2>Data classification</h2>
+    <table>
+      <tr><th>Class</th><th>Examples</th><th>Rules</th></tr>
+      <tr><td>Public</td><td>Press releases</td><td>No restrictions</td></tr>
+      <tr><td>Internal</td><td>Org charts, policies</td><td>Employees only</td></tr>
+      <tr><td>Confidential</td><td>Contracts, salaries</td><td>Need-to-know, encrypted at rest</td></tr>
+      <tr><td>Restricted</td><td>Customer payment data</td><td>Named individuals, logged access</td></tr>
+    </table>
+
+    <h2>Reporting incidents</h2>
+    <p>Report suspected phishing, lost devices or data leaks to the security team within
+      1 hour at security@northwind.example or by calling extension 4444. Do not try to
+      investigate yourself, and do not delete the suspicious email.</p>
+  </main>
+  <footer>Copyright Northwind Traders</footer>
+</body>
+</html>

@@ -2,8 +2,10 @@
 
 import asyncio
 import io
+import uuid
 from collections.abc import Awaitable, Callable
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -22,6 +24,78 @@ def run_db[T](fn: Callable[[AsyncConnection], Awaitable[T]]) -> T:
             await engine.dispose()
 
     return asyncio.run(runner())
+
+
+def create_group(name: str) -> uuid.UUID:
+    async def insert(conn):
+        group_id = uuid.uuid4()
+        await conn.execute(
+            text("INSERT INTO groups (id, name) VALUES (:id, :name)"),
+            {"id": group_id, "name": name},
+        )
+        await conn.commit()
+        return group_id
+
+    return run_db(insert)
+
+
+def create_user(email: str, group_ids: list[uuid.UUID] = (), is_admin: bool = False) -> uuid.UUID:
+    async def insert(conn):
+        user_id = uuid.uuid4()
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, email, display_name, is_admin) "
+                "VALUES (:id, :email, :email, :is_admin)"
+            ),
+            {"id": user_id, "email": email, "is_admin": is_admin},
+        )
+        for group_id in group_ids:
+            await conn.execute(
+                text("INSERT INTO user_groups (user_id, group_id) VALUES (:u, :g)"),
+                {"u": user_id, "g": group_id},
+            )
+        await conn.commit()
+        return user_id
+
+    return run_db(insert)
+
+
+def run_worker_once(embedder=None) -> str | None:
+    """Process one queued document, as the ingestion worker would."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.db.session import build_session_factory
+    from app.ingestion.embeddings import HashingEmbedder
+    from app.ingestion.pipeline import process_next
+    from app.ingestion.storage import LocalFileStorage
+
+    settings = get_settings()
+
+    async def go():
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            return await process_next(
+                build_session_factory(engine),
+                LocalFileStorage(settings.upload_dir),
+                embedder or HashingEmbedder(settings.embedding_dim),
+                settings,
+            )
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(go())
+
+
+def ingest(client, filename: str, data: bytes, group_ids: list[uuid.UUID] = ()) -> str:
+    """Upload a document and run ingestion on it. Returns the document id."""
+    response = client.post(
+        "/documents",
+        files={"file": (filename, data)},
+        data={"group_ids": [str(g) for g in group_ids]},
+    )
+    assert response.status_code == 202, response.text
+    assert run_worker_once() == "ready"
+    return response.json()["id"]
 
 
 def make_pdf(pages: list[str], title: str | None = None) -> bytes:

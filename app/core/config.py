@@ -44,6 +44,22 @@ class Settings(BaseSettings):
     chunk_max_tokens: int = 450
     chunk_overlap_tokens: int = 50
 
+    # --- Retrieval ---
+    # Candidates taken from each retriever (vector and keyword) before fusion.
+    retrieval_candidates: int = 40
+    # Reciprocal Rank Fusion constant: higher flattens the advantage of top ranks.
+    rrf_k: int = 60
+    # The reranker is the slowest step: its cost grows with candidates x passage length.
+    # On a laptop CPU, 20 candidates x 1200 chars takes ~1 s; a server CPU or GPU is far
+    # faster. Tune both against the Phase 6 retrieval evals, not by feel.
+    rerank_candidates: int = 20
+    rerank_max_chars: int = 1200
+    # HNSW search breadth; higher = better recall, slower. pgvector default is 40.
+    hnsw_ef_search: int = 100
+    # "fastembed" runs a local cross-encoder; "none" skips reranking (tests, ablations).
+    reranker_provider: Literal["fastembed", "none"] = "fastembed"
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+
     # --- Ingestion worker ---
     worker_poll_interval_s: float = 2.0
     # A document stuck in "processing" this long (worker crashed) is put back in the queue.

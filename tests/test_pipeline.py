@@ -9,30 +9,8 @@ from sqlalchemy.pool import NullPool
 from app.core.config import get_settings
 from app.db.session import build_session_factory
 from app.ingestion.embeddings import HashingEmbedder
-from app.ingestion.pipeline import process_next, requeue_stale
-from app.ingestion.storage import LocalFileStorage
-from tests.helpers import SAMPLE_MARKDOWN, make_docx, make_pdf, run_db
-
-
-def run_worker_once(embedder=None) -> str | None:
-    """Process one queued document, as the worker would."""
-    settings = get_settings()
-
-    async def go():
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        engine = create_async_engine(settings.database_url, poolclass=NullPool)
-        try:
-            return await process_next(
-                build_session_factory(engine),
-                LocalFileStorage(settings.upload_dir),
-                embedder or HashingEmbedder(settings.embedding_dim),
-                settings,
-            )
-        finally:
-            await engine.dispose()
-
-    return asyncio.run(go())
+from app.ingestion.pipeline import requeue_stale
+from tests.helpers import SAMPLE_MARKDOWN, make_docx, make_pdf, run_db, run_worker_once
 
 
 def upload(client: TestClient, name: str, data: bytes) -> dict:

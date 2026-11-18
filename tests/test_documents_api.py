@@ -2,26 +2,12 @@ import hashlib
 import uuid
 
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 
-from tests.helpers import SAMPLE_MARKDOWN, make_pdf, run_db
+from tests.helpers import SAMPLE_MARKDOWN, create_group, make_pdf
 
 
 def upload(client: TestClient, name: str, data: bytes, **form):
     return client.post("/documents", files={"file": (name, data)}, data=form)
-
-
-def create_group(name: str) -> uuid.UUID:
-    async def insert(conn):
-        group_id = uuid.uuid4()
-        await conn.execute(
-            text("INSERT INTO groups (id, name) VALUES (:id, :name)"),
-            {"id": group_id, "name": name},
-        )
-        await conn.commit()
-        return group_id
-
-    return run_db(insert)
 
 
 def test_upload_queues_document(client: TestClient) -> None:

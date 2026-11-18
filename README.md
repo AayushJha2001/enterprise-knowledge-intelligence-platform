@@ -28,7 +28,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 
 - [x] **Phase 1 – Foundation:** project layout, Docker Compose, config, schema + migrations, health probes, structured logs, CI
 - [x] **Phase 2 – Ingestion:** upload, PDF/DOCX/MD/HTML parsing, heading-aware chunking, embeddings, background worker
-- [ ] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
+- [x] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
 - [ ] **Phase 4 – Answering:** streamed, cited answers; structured extraction endpoint
 - [ ] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
 - [ ] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
@@ -80,6 +80,37 @@ Failures: unreadable files (corrupt, encrypted, scanned PDFs without text) fail 
 a reason; transient errors are retried up to 3 times; a document stuck in `processing` for 15
 minutes (crashed worker) is requeued.
 
+## Searching
+
+```bash
+curl -X POST http://localhost:8000/search -H "Content-Type: application/json" \
+  -d '{"query": "how much parental leave do I get?", "top_k": 5}'
+```
+
+Options: `mode` (`hybrid` default, or `dense` / `keyword` for comparison), `rerank`
+(default `true`), `document_ids` (restrict to some documents). Each result carries its
+document, section path, page range, the final `score`, and the per-stage ranks
+(`dense_rank`, `keyword_rank`, `rrf_score`, `rerank_score`); `timings_ms` breaks down latency.
+
+Pipeline:
+
+1. **Dense:** embed the query (bge-small, query encoding) and take the 40 nearest chunks from
+   the HNSW index (`ef_search=100`, iterative scan so ACL filtering can't starve results).
+2. **Keyword:** Postgres full-text search with OR semantics, ranked by `ts_rank_cd`; catches
+   exact identifiers like `VPN-809` or `ORD-5003` that embeddings blur.
+3. **Fuse** with Reciprocal Rank Fusion (k=60): rank-based, so no score calibration needed.
+4. **Rerank** the top 20 with a cross-encoder (`ms-marco-MiniLM-L-6-v2`), which reads the
+   query and passage together. Scores are mapped to 0–1 relevance.
+
+**Access control** is a SQL predicate inside both retrieval queries: a chunk is a candidate
+only if the caller is an admin or in a group its document is shared with. Unshared documents
+are admin-only. `document_ids` can narrow results but never widen access.
+
+> Until Phase 5 adds login, callers act as a local admin, or as a specific user via an
+> `X-User-Id` header. This shortcut is refused when `ENVIRONMENT=production`.
+
+Sample documents for trying it out are in `samples/corpus/`.
+
 ## Development
 
 Run lint and tests inside the container. Tests use a separate `ekip_test` database (created
@@ -106,10 +137,12 @@ Host ports: Postgres `5433`, Redis `6380`, API `8000` (chosen to avoid clashing 
 app/
   main.py            app factory, lifespan (DB + Redis pools, file storage)
   worker.py          ingestion worker process
-  core/              settings, JSON logging, request-id middleware
+  core/              settings, JSON logging, request-id middleware, principal (who's asking)
   db/                SQLAlchemy models, async session
-  api/               routers (health, documents)
+  api/               routers (health, documents, search)
   ingestion/         parsers, chunking, embeddings, storage, pipeline (the job)
+  retrieval/         hybrid search, RRF fusion, cross-encoder reranking
+samples/corpus/      fictional company documents for demos and evals
 migrations/          Alembic migrations
 tests/               integration tests
 .github/workflows/   CI: lint, migrate, test, downgrade check, prod image build

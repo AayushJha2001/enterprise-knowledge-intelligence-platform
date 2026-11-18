@@ -21,6 +21,8 @@ if not _url.database.endswith("_test"):
 os.environ["DATABASE_URL"] = _url.render_as_string(hide_password=False)
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="ekip-test-uploads-")
 os.environ["EMBEDDING_PROVIDER"] = "hash"
+os.environ["RERANKER_PROVIDER"] = "none"
+os.environ["ENVIRONMENT"] = "test"
 
 from collections.abc import Iterator  # noqa: E402
 
