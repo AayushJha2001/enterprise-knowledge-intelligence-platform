@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     query_embedding_cache_ttl_s: int = 86400
 
     # --- Answer generation ---
-    # "auto": Claude when ANTHROPIC_API_KEY is set, otherwise the free offline extractive
+    # "auto": the Anthropic API when ANTHROPIC_API_KEY is set, otherwise the free offline extractive
     # answerer. "anthropic" requires the key (else /ask returns 503). "extractive" never
     # calls an API.
     llm_provider: Literal["auto", "anthropic", "extractive"] = "auto"
@@ -100,10 +100,10 @@ class Settings(BaseSettings):
     # missing multi-step reasoning across sources. (Opus 5.5's own default is "medium".)
     answer_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
     answer_max_tokens: int = 64000
-    # Passages given to Claude as search results.
+    # Passages given to the LLM as search results.
     answer_context_chunks: int = 8
     # If the best reranked passage scores below this, answer "not found" without calling
-    # Claude: cheaper, and it can't be tempted to answer from general knowledge.
+    # the LLM: cheaper, and it can't be tempted to answer from general knowledge.
     # Tuned on evals/datasets/northwind.jsonl (ms-marco-MiniLM-L-6-v2): any value in
     # 0.0005-0.004 gave the fewest errors (was 0.02, which wrongly rejected 4 of 58
     # answerable questions). Re-tune when the reranker or the corpus changes.

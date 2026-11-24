@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.cache import Cache, access_scope, normalize_query
 from app.core.config import Settings
 from app.core.security import Principal
-from app.generation.gateway import CitationDelta, ClaudeGateway, Completed, TextDelta
+from app.generation.gateway import AnthropicGateway, CitationDelta, Completed, TextDelta
 from app.generation.pricing import Usage, estimate_cost_usd
 from app.generation.prompts import ANSWER_SYSTEM_PROMPT, Source, user_message
 from app.retrieval.search import Retriever, SearchResult
@@ -113,7 +113,7 @@ class AnswerService:
     def __init__(
         self,
         retriever: Retriever,
-        gateway: ClaudeGateway,
+        gateway: AnthropicGateway,
         session_factory: async_sessionmaker[AsyncSession],
         settings: Settings,
         cache: Cache | None = None,

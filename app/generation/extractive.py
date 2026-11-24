@@ -1,14 +1,14 @@
 """Offline answer generator: no LLM, no API key, no cost.
 
-Implements the same interface as ClaudeGateway and receives the exact messages Claude
-would (search_result blocks + the question). Instead of writing an answer, it *selects*
+Implements the same interface as AnthropicGateway and receives the exact messages the
+LLM would (search_result blocks + the question). Instead of writing an answer, it *selects*
 the sentences from those passages that best match the question, using the local
 embedding model, and returns each with a citation to its passage and paragraph.
 
 What it can't do, compared with an LLM: combine facts across sentences, resolve
 conditions ("220 EUR in Paris" vs "150 EUR elsewhere"), rephrase, or say "no" in its own
 words. It is a free stand-in that keeps the whole pipeline working end to end; set
-ANTHROPIC_API_KEY (or LLM_PROVIDER=anthropic) to use Claude instead.
+ANTHROPIC_API_KEY (or LLM_PROVIDER=anthropic) to use the Anthropic API instead.
 """
 
 import asyncio
@@ -33,7 +33,7 @@ _NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
 
 @dataclass(frozen=True)
 class Candidate:
-    search_result_index: int  # which passage (0-based, as in Claude's citations)
+    search_result_index: int  # which passage (0-based, as in the API's citations)
     paragraph_index: int  # which text block inside it
     sentence: str
     paragraph: str

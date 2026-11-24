@@ -1,4 +1,4 @@
-"""/ask and /extract with a fake Claude gateway (no network, no cost)."""
+"""/ask and /extract with a fake LLM gateway (no network, no cost)."""
 
 import json
 import uuid
@@ -136,7 +136,7 @@ class TestAsk:
         source_1 = body["sources"][0]
         assert source_1["number"] == 1 and source_1["label"].startswith("[1] ")
 
-    def test_request_sent_to_claude(self, client: TestClient, docs, install) -> None:
+    def test_request_sent_to_llm(self, client: TestClient, docs, install) -> None:
         gateway = install(FakeGateway(ANSWER_EVENTS))
         ask_json(client)
 

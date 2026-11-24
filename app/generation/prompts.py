@@ -1,7 +1,7 @@
-"""Prompts and the `search_result` blocks that carry retrieved passages to Claude.
+"""Prompts and the `search_result` blocks that carry retrieved passages to the LLM.
 
-Passages are sent as `search_result` content blocks, Claude's native format for RAG. With
-citations enabled, Claude returns each claim with `search_result_location` citations that
+Passages are sent as `search_result` content blocks, the Anthropic API's native format for RAG. With
+citations enabled, the model returns each claim with `search_result_location` citations that
 point back to the exact passage (and paragraph within it) it relied on.
 """
 
@@ -13,7 +13,7 @@ from app.retrieval.search import location
 
 @dataclass(frozen=True)
 class Source:
-    """A retrieved passage as shown to Claude and returned to the caller."""
+    """A retrieved passage as shown to the LLM and returned to the caller."""
 
     number: int  # 1-based, as in the [n] markers of the answer
     chunk_id: uuid.UUID

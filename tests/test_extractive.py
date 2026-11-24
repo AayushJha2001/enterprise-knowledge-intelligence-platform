@@ -12,7 +12,13 @@ from app.generation.extractive import (
     ExtractiveGateway,
     candidate_sentences,
 )
-from app.generation.gateway import CitationDelta, ClaudeGateway, Completed, TextDelta, build_gateway
+from app.generation.gateway import (
+    AnthropicGateway,
+    CitationDelta,
+    Completed,
+    TextDelta,
+    build_gateway,
+)
 from app.generation.prompts import Source, user_message
 from app.ingestion.embeddings import HashingEmbedder
 from tests.helpers import ingest
@@ -157,7 +163,7 @@ def test_extract_fills_fields_from_best_sentences() -> None:
 def test_provider_selection() -> None:
     assert isinstance(build_gateway(Settings(anthropic_api_key=""), EMBEDDER), ExtractiveGateway)
     with_key = Settings(anthropic_api_key="sk-test")
-    assert isinstance(build_gateway(with_key, EMBEDDER), ClaudeGateway)
+    assert isinstance(build_gateway(with_key, EMBEDDER), AnthropicGateway)
     forced = Settings(anthropic_api_key="sk-test", llm_provider="extractive")
     assert isinstance(build_gateway(forced, EMBEDDER), ExtractiveGateway)
     assert build_gateway(Settings(llm_provider="anthropic", anthropic_api_key=""), EMBEDDER) is None

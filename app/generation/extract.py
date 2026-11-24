@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.core.security import Principal
 from app.generation.answer import retrieve_for_generation, source_payload
-from app.generation.gateway import ClaudeGateway
+from app.generation.gateway import AnthropicGateway
 from app.generation.pricing import Usage, estimate_cost_usd
 from app.generation.prompts import EXTRACT_SYSTEM_PROMPT, user_message
 from app.retrieval.search import Retriever
@@ -84,7 +84,7 @@ class ExtractionService:
     def __init__(
         self,
         retriever: Retriever,
-        gateway: ClaudeGateway,
+        gateway: AnthropicGateway,
         session_factory: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> None:

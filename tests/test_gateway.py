@@ -1,4 +1,4 @@
-"""ClaudeGateway: request parameters and translation of SDK stream events."""
+"""AnthropicGateway: request parameters and translation of SDK stream events."""
 
 import asyncio
 from types import SimpleNamespace as NS
@@ -6,8 +6,8 @@ from types import SimpleNamespace as NS
 from app.core.config import Settings
 from app.generation.gateway import (
     FALLBACK_BETA,
+    AnthropicGateway,
     CitationDelta,
-    ClaudeGateway,
     Completed,
     TextDelta,
 )
@@ -75,7 +75,7 @@ FINAL = NS(
 )
 
 
-def collect(gateway: ClaudeGateway) -> list:
+def collect(gateway: AnthropicGateway) -> list:
     async def run():
         return [e async for e in gateway.stream(system="sys", messages=[{"role": "user"}])]
 
@@ -83,7 +83,7 @@ def collect(gateway: ClaudeGateway) -> list:
 
 
 def test_translates_stream_events() -> None:
-    events = collect(ClaudeGateway(FakeClient(EVENTS, FINAL), Settings()))
+    events = collect(AnthropicGateway(FakeClient(EVENTS, FINAL), Settings()))
     assert events == [
         TextDelta(1, "16 weeks"),
         CitationDelta(1, 2, 0, 1, "Parents receive 16 weeks."),
@@ -98,7 +98,7 @@ def test_translates_stream_events() -> None:
 
 def test_request_parameters() -> None:
     client = FakeClient([], FINAL)
-    collect(ClaudeGateway(client, Settings(answer_effort="medium")))
+    collect(AnthropicGateway(client, Settings(answer_effort="medium")))
     assert client.params["model"] == "claude-opus-5-5"
     assert client.params["system"] == "sys"
     assert client.params["output_config"] == {"effort": "medium"}
@@ -109,7 +109,7 @@ def test_request_parameters() -> None:
 
 def test_fallbacks_can_be_disabled() -> None:
     client = FakeClient([], FINAL)
-    collect(ClaudeGateway(client, Settings(llm_fallbacks_enabled=False)))
+    collect(AnthropicGateway(client, Settings(llm_fallbacks_enabled=False)))
     assert "fallbacks" not in client.params and "betas" not in client.params
 
 
@@ -120,7 +120,7 @@ def test_refusal_category_is_reported() -> None:
         usage=NS(input_tokens=10, output_tokens=0),
         stop_details=NS(category="cyber"),
     )
-    events = collect(ClaudeGateway(FakeClient([], final), Settings()))
+    events = collect(AnthropicGateway(FakeClient([], final), Settings()))
     assert events[-1].refusal_category == "cyber"
 
 

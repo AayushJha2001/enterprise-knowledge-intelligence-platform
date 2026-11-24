@@ -1,7 +1,7 @@
 # Enterprise Knowledge Intelligence Platform
 
 Retrieval-augmented generation (RAG) over enterprise documents: ingestion, chunking, embeddings,
-hybrid retrieval, reranking and cited answers from Claude, with document-level access control,
+hybrid retrieval, reranking and cited answers from an LLM, with document-level access control,
 an evaluation harness, and latency/token-cost tracing.
 
 ## Architecture
@@ -10,7 +10,7 @@ an evaluation harness, and latency/token-cost tracing.
 Upload ─► Parse ─► Chunk ─► Embed ─► Postgres (pgvector HNSW + full-text GIN)
                                              │
 Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF fusion)
-       ─► ACL filter in SQL ─► Cross-encoder rerank ─► Claude with citations
+       ─► ACL filter in SQL ─► Cross-encoder rerank ─► LLM with citations
        ─► SSE stream of answer + sources
               ↘ Redis cache   ↘ Trace (latency, tokens, $)   ↘ Eval harness
 ```
@@ -21,7 +21,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 | Store        | PostgreSQL 16 + pgvector                 | Vectors, keyword search and ACLs in one transactional DB |
 | Cache        | Redis 7                                  | Query-embedding and answer caching |
 | Embeddings   | bge-small-en-v1.5 (local, 384-d)         | No extra API dependency |
-| Generation   | Claude (Anthropic API)                   | Native citations, streaming |
+| Generation   | Anthropic API (LLM)                      | Native citations, streaming |
 | Packaging    | Docker / docker compose                  | Same stack locally and in CI |
 
 ## Roadmap
@@ -29,7 +29,7 @@ Query ─► Auth (JWT → groups) ─► Hybrid search (vector + keyword, RRF f
 - [x] **Phase 1 – Foundation:** project layout, Docker Compose, config, schema + migrations, health probes, structured logs, CI
 - [x] **Phase 2 – Ingestion:** upload, PDF/DOCX/MD/HTML parsing, heading-aware chunking, embeddings, background worker
 - [x] **Phase 3 – Retrieval:** hybrid search (RRF), ACL filtering, reranking
-- [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; Claude or free offline generator
+- [x] **Phase 4 – Answering:** streamed, cited answers; structured extraction; LLM or free offline generator
 - [x] **Phase 5 – Auth & caching:** JWT, users/groups, admin grants, Redis caching
 - [x] **Phase 6 – Observability & evals:** per-request traces and cost, retrieval/answer eval harness in CI
 - [x] **Phase 7 – UI & deploy:** chat UI with citations, production image and compose, Azure guide
@@ -179,7 +179,7 @@ python scripts/ask.py --email hana@northwind.example "How much parental leave do
 | `LLM_PROVIDER` | Used when | What it does |
 |---|---|---|
 | `extractive` | default without a key | Offline. Picks the sentences from the retrieved passages that best match the question (local embeddings) and cites each one. Free, ~1 s on a laptop CPU. |
-| `anthropic` | default when `ANTHROPIC_API_KEY` is set | Claude writes the answer from the passages, with native citations. |
+| `anthropic` | default when `ANTHROPIC_API_KEY` is set | The LLM writes the answer from the passages, with native citations. |
 
 Both receive the same `search_result` messages and emit the same events, so the API,
 streaming format and citations are identical; switching is a config change. The extractive
@@ -187,7 +187,7 @@ generator can't combine facts, apply conditions ("220 EUR in Paris" vs "150 EUR 
 or rephrase. It quotes. `/extract` in offline mode is a heuristic (best-matching sentence;
 first number in it for numeric fields; booleans left null).
 
-### Using Claude (optional, paid)
+### Using the Anthropic API (optional, paid)
 
 Put a key in a `.env` file next to `docker-compose.yml` (git ignores it), then restart the
 API:
@@ -219,7 +219,7 @@ passages that support it:
 
 How answers stay grounded:
 
-- Passages go to Claude as `search_result` blocks with citations enabled, so every claim
+- Passages go to the LLM as `search_result` blocks with citations enabled, so every claim
   comes back linked to the passage (and paragraph) it came from. `grounded: false` flags an
   answer with no citations at all.
 - Only passages the caller may read are retrieved, so the model never sees anything else.
@@ -228,7 +228,7 @@ How answers stay grounded:
 - The system prompt treats passages as data, not instructions (prompt-injection defense).
 - Retrieval uses its own short DB session, released before the model call starts.
 
-Model settings: `claude-opus-5-5`, effort `low` (configurable via `ANSWER_EFFORT`), with
+Model settings: Anthropic's Opus model (`ANSWER_MODEL`), effort `low` (configurable via `ANSWER_EFFORT`), with
 server-side fallback enabled so a request declined by a safety classifier is retried on
 another model. Refusals and truncated answers are reported in `status`.
 
@@ -367,7 +367,7 @@ app/
   ingestion/         parsers, chunking, embeddings, storage, pipeline (the job)
   web/               chat UI (HTML/CSS/JS, served at /)
   retrieval/         hybrid search, RRF fusion, cross-encoder reranking
-  generation/        Claude gateway, offline extractive gateway, prompts, cited answers,
+  generation/        Anthropic gateway, offline extractive gateway, prompts, cited answers,
                      structured extraction, pricing
 scripts/ask.py       command-line client for /ask
 samples/corpus/      fictional company documents for demos and evals

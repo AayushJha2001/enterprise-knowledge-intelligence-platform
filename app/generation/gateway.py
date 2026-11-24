@@ -58,7 +58,7 @@ class JsonResult:
     extras: dict[str, Any] = field(default_factory=dict)
 
 
-class ClaudeGateway:
+class AnthropicGateway:
     def __init__(self, client: anthropic.AsyncAnthropic, settings: Settings) -> None:
         self._client = client
         self._settings = settings
@@ -137,7 +137,7 @@ def _refusal_category(message: object) -> str | None:
 
 
 def build_gateway(settings: Settings, embedder: Embedder):
-    """Claude if configured, else the offline extractive answerer (see LLM_PROVIDER)."""
+    """The Anthropic API if configured, else the offline extractive answerer (see LLM_PROVIDER)."""
     provider = settings.llm_provider
     if provider == "auto":
         provider = "anthropic" if settings.anthropic_api_key else "extractive"
@@ -149,10 +149,10 @@ def build_gateway(settings: Settings, embedder: Embedder):
     if settings.anthropic_api_key is None:
         logger.warning("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set: /ask disabled")
         return None
-    logger.info("answers use Claude (%s)", settings.answer_model)
+    logger.info("answers use the Anthropic API (%s)", settings.answer_model)
     client = anthropic.AsyncAnthropic(
         api_key=settings.anthropic_api_key.get_secret_value(),
         timeout=settings.llm_timeout_s,
         max_retries=2,
     )
-    return ClaudeGateway(client, settings)
+    return AnthropicGateway(client, settings)
